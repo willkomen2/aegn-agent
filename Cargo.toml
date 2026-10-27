@@ -1,0 +1,33 @@
+[package]
+name = "aegn-agent"
+version = "0.1.0"
+edition = "2021"
+description = "Agente de administracion y seguridad de endpoints para el parque informatico de la Escola AEGN"
+authors = ["Escola AEGN - IT"]
+license = "MIT"
+# El binario se instala como `aegn` para uso comodo desde la consola del administrador.
+default-run = "aegn"
+
+[[bin]]
+name = "aegn"
+path = "src/main.rs"
+
+[dependencies]
+# CLI: parseo de argumentos para modo no interactivo (scripts / despliegue).
+clap = { version = "4.5", features = ["derive"] }
+# TUI + ASCII art para el menu interactivo del administrador.
+ratatui = "0.29"
+crossterm = "0.28"
+figlet-rs = "0.1"
+# Manejo de errores ergonomico.
+anyhow = "1"
+# Serializacion (reportes de auditoria, politicas).
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Cliente HTTP ligero para la API de GitHub (gestion del repo del proyecto).
+ureq = { version = "2.10", features = ["json"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true
