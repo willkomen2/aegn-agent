@@ -14,6 +14,12 @@ caso a senha fica `admin` até a alterar com `aegn senha alterar`.
 
 ### Novidades
 
+- **AppLocker passa a lista negra** (0.7.0): já nada fica bloqueado ao
+  iniciar sessão. Tudo se executa, exceto, nas contas de aluno, o RustDesk,
+  AnyDesk, TeamViewer, Roblox, Steam e Battle.net (negados pela assinatura,
+  mesmo portáteis ou renomeados). Os administradores nunca são bloqueados.
+  O instalador substitui sozinho as regras das versões anteriores.
+
 - **Instalar programas com a senha do AEGN** (0.6.0): `aegn instalar
   <ficheiro.exe|.msi>` pede a senha do AEGN (por defeito `admin`) e abre o
   instalador elevado; o Windows pede então uma conta de administrador. Serve

@@ -203,17 +203,13 @@ aegn auditoria historico              # o que foi desinstalado e quando
 
 ## Proteções
 
-- **AppLocker** (Exe, Script e MSI): só se executa o que está em `%WINDIR%`
-  ou `%PROGRAMFILES%` (MSI: `%WINDIR%\Installer`); os administradores podem
-  tudo. Ficam assim bloqueados `.exe`, `.ps1/.bat/.cmd/.vbs/.js` e `.msi`
-  vindos de Transferências, Ambiente de Trabalho, AppData, Documentos ou uma
-  pen USB. Os administradores **nunca** são bloqueados, nem sem elevar (cada
-  conta do grupo Administradores tem a sua regra). Para instalar algo numa
-  conta de aluno: `aegn instalar <ficheiro.exe|.msi>`, que pede a senha do
-  AEGN e depois o Windows pede uma conta de administrador. Também se permite,
-  esteja onde estiver, o que vem assinado pela Microsoft (OneDrive, Teams,
-  componentes do Windows que arrancam ao iniciar sessão), pela Google (Chrome)
-  e pela Mozilla (Firefox), mesmo instalados só para o utilizador.
+- **AppLocker** (lista negra, só `.exe`): tudo se executa, incluindo o
+  Windows e o que arranca ao iniciar sessão. Às contas de aluno (as que não
+  estão no grupo Administradores) negam-se, pela assinatura digital e esteja
+  onde estiver o `.exe`, o RustDesk, AnyDesk, TeamViewer, Roblox, Steam e
+  Battle.net. Os administradores nunca são bloqueados. Os que estiverem
+  instalados são ainda desinstalados pela limpeza (`aegn auditoria limpar`).
+  Uma conta de aluno nova entra na lista na execução seguinte do agente.
 - **Firewall**: bloqueio de saída das portas do RustDesk (21114-21119),
   AnyDesk (6568) e TeamViewer (5938). O AnyDesk e o TeamViewer podem sair pela
   porta 443; para os cortar de vez é preciso filtrar por domínio (proxy ou DNS).
@@ -250,7 +246,7 @@ Em Windows, à mão:
 ```powershell
 cargo build --release
 dotnet tool install --global wix --version 5.0.2
-wix build installer\aegn.wxs -arch x64 -d Version=0.6.0 -d ExePath=target\release\aegn.exe -o AEGN-Security-0.6.0-x64.msi
+wix build installer\aegn.wxs -arch x64 -d Version=0.7.0 -d ExePath=target\release\aegn.exe -o AEGN-Security-0.7.0-x64.msi
 ```
 
 Em Linux pode verificar-se que o código de Windows compila (sem ligar):

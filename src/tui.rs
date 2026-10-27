@@ -236,7 +236,7 @@ impl App {
             Entry::ToggleRustdesk => "Inclui o RustDesk (acesso remoto) na desinstalação.",
             Entry::ToggleOpencode => "Inclui o OpenCode na desinstalação.",
             Entry::ToggleClean => "Desinstala Roblox, Spotify, Lively Wallpaper, cursores personalizados, jogos (Steam, Riot, Epic, Battle.net, EA, Ubisoft, GOG) e acesso remoto não autorizado em todos os perfis e na Store, e apaga os restos. Tailscale, Git e o software do sistema ficam sempre.",
-            Entry::TogglePolicies => "AppLocker: só se executam programas, scripts e MSI do Windows e de Program Files (os administradores, tudo). Também o que vem assinado pela Microsoft, Google (Chrome) e Mozilla (Firefox).",
+            Entry::TogglePolicies => "AppLocker (lista negra): tudo se executa, exceto RustDesk, AnyDesk, TeamViewer, Roblox, Steam e Battle.net nas contas de aluno. Os administradores, nunca bloqueados.",
             Entry::ToggleAuditOnly => "AppLocker em modo auditoria: não bloqueia, só regista o que bloquearia. Use-o primeiro em cada sala e reveja os 'Eventos do AppLocker'.",
             Entry::ToggleFirewall => "Bloqueia a saída pelas portas do RustDesk, AnyDesk e TeamViewer.",
             Entry::ToggleBrowser => "Chrome, Edge e Firefox apagam cookies (e as contas Google abertas) ao fechar, e portanto ao terminar a sessão do Windows. Desativa a sincronização e o início de sessão no Chrome.",

@@ -127,7 +127,7 @@ enum Command {
         aplicar: bool,
     },
 
-    /// Instala um programa (.exe ou .msi) bloqueado pelo AppLocker. Pede a
+    /// Instala um programa (.exe ou .msi) com uma conta de administrador. Pede a
     /// senha do AEGN e depois o Windows pede uma conta de administrador.
     #[command(alias = "install")]
     Instalar {
@@ -208,7 +208,7 @@ enum PolicyAction {
     /// Mostra o estado atual das políticas AppLocker.
     #[command(alias = "status")]
     Estado,
-    /// Bloqueia aos alunos a execução em AppData, Transferências e restantes pastas de utilizador.
+    /// Lista negra: nega aos alunos o RustDesk, AnyDesk, TeamViewer, Roblox, Steam e Battle.net.
     #[command(alias = "enforce")]
     Impor {
         /// Aplica a política (por defeito apenas a mostra). Pede a senha.

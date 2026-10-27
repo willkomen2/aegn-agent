@@ -16,7 +16,7 @@
     "aegn reverter" com a opção aplicar antes de desinstalar (o desinstalar.cmd faz isso).
 
   Compilar (Windows):
-    wix build installer\aegn.wxs -arch x64 -d Version=0.6.0 -d ExePath=target\release\aegn.exe -o AEGN-Security.msi
+    wix build installer\aegn.wxs -arch x64 -d Version=0.7.0 -d ExePath=target\release\aegn.exe -o AEGN-Security.msi
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="AEGN Security"

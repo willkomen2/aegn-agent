@@ -1,181 +1,130 @@
-//! Politicas de restriccion de ejecucion en carpetas de usuario.
+//! Lista negra de programas con AppLocker.
 //!
-//! El objetivo es impedir que se ejecuten binarios, scripts o instaladores
-//! arbitrarios desde rutas escribibles por el usuario (donde no hace falta ser
-//! administrador para copiar archivos), que es el bypass tipico para correr
-//! instaladores, juegos o herramientas de acceso remoto portables.
+//! Todo se puede ejecutar (regla Allow "*" para Todos), excepto los programas
+//! de la lista `BLOCKED`, que se niegan por editor de la firma digital: da
+//! igual donde esten o como se llame el .exe. Las reglas Deny se crean para
+//! cada cuenta de alumno (las que no estan en el grupo Administradores), asi
+//! que a los administradores no les afecta nada, ni con UAC sin elevar.
 //!
-//! Mecanismo: reglas de ruta de AppLocker (`Set-AppLockerPolicy`), el metodo
-//! soportado por Microsoft para control de aplicaciones. Es transparente y
-//! reversible: queda registrado en la directiva y se puede auditar.
+//! Antes era una lista blanca (solo Windows y Program Files) y bloqueaba cosas
+//! que Windows arranca desde el perfil al iniciar sesion. Las colecciones
+//! Script y Msi ya no se tocan: al retirar las reglas viejas quedan en
+//! NotConfigured.
 //!
-//! Colecciones: Exe, Script (.ps1 .bat .cmd .vbs .js) y Msi. En cada una solo
-//! se permite %WINDIR% y %PROGRAMFILES% (MSI: %WINDIR%\Installer) a todos y
-//! cualquier ruta a los administradores; lo demas queda bloqueado por defecto
-//! a los utilizadores normales (AppData, Downloads, Desktop, USB...).
-//!
-//! Sin reglas Deny: un Deny gana a todos los Allow, tambien al de los
-//! administradores, y bloqueaba lo que Windows arranca desde el perfil al
-//! iniciar sesion. Lo firmado por Microsoft (OneDrive, Teams, Edge WebView...)
-//! y los navegadores Chrome y Firefox se permiten por editor aunque esten
-//! instalados en AppData: un alumno no puede firmar sus binarios como ellos.
+//! Los programas instalados de la lista negra los desinstala ademas
+//! `auditoria limpar` (ver junk.rs); esto cubre los portables.
 //!
 //! Modo auditoria (`--so-auditoria`): `AuditOnly` no bloquea nada, solo registra en el visor de
-//! eventos lo que se habria bloqueado (ver `events`). Es el paso previo
-//! recomendado antes de activar el bloqueo en un aula.
+//! eventos lo que se habria bloqueado (ver `events`).
 
 use anyhow::Result;
 
-/// Identificador de grupo que el agente usa en sus reglas, para poder
-/// distinguirlas y revertirlas sin tocar otras directivas existentes.
+/// Prefijo de los nombres de las reglas del agente, para distinguirlas y
+/// revertirlas sin tocar otras directivas. Se conserva el de la version con
+/// lista blanca para que `strip_script` tambien retire aquellas reglas.
 const RULE_TAG: &str = "AEGN-Deny-UserFolders";
 
 const EVERYONE: &str = "S-1-1-0";
+#[cfg(windows)]
 const ADMINS: &str = "S-1-5-32-544";
 
-/// Condicion de una regla: ruta, o editor de la firma digital (producto).
-enum Cond {
-    Path(&'static str),
-    Publisher(&'static str, &'static str),
-}
-
-/// Una regla: (coleccion, nombre, sid, condicion). Todas son Allow.
-type Rule = (&'static str, &'static str, &'static str, Cond);
-
-const MICROSOFT: &str = "O=MICROSOFT CORPORATION, L=REDMOND, S=WASHINGTON, C=US";
-const GOOGLE: &str = "O=GOOGLE LLC, L=MOUNTAIN VIEW, S=CALIFORNIA, C=US";
-const MOZILLA: &str = "O=MOZILLA CORPORATION, L=SAN FRANCISCO, S=CALIFORNIA, C=US";
-
-/// Reglas del agente: con una coleccion activa, lo que no case con ningun
-/// Allow queda bloqueado. Los administradores tienen "*" en todas.
-const RULES: &[Rule] = &[
+/// Programas negados a los alumnos: (nombre, editor tal como lo muestra
+/// AppLocker). Los editores salen de la firma de los instaladores oficiales.
+const BLOCKED: &[(&str, &str)] = &[
+    ("RustDesk", "O=PURSLANE, S=NORTH WEST, C=SG"),
     (
-        "Exe",
-        "Permitir Program Files",
-        EVERYONE,
-        Cond::Path(r"%PROGRAMFILES%\*"),
+        "AnyDesk",
+        "O=ANYDESK SOFTWARE GMBH, L=STUTTGART, S=BADEN-WÜRTTEMBERG, C=DE",
     ),
+    ("TeamViewer", "O=TEAMVIEWER GERMANY GMBH, L=GÖPPINGEN, C=DE"),
     (
-        "Exe",
-        "Permitir Windows",
-        EVERYONE,
-        Cond::Path(r"%WINDIR%\*"),
+        "Roblox",
+        "O=ROBLOX CORPORATION, L=SAN MATEO, S=CALIFORNIA, C=US",
     ),
-    ("Exe", "Permitir Administradores", ADMINS, Cond::Path("*")),
+    ("Steam", "O=VALVE CORP., L=BELLEVUE, S=WASHINGTON, C=US"),
     (
-        "Exe",
-        "Assinados pela Microsoft",
-        EVERYONE,
-        Cond::Publisher(MICROSOFT, "*"),
+        "Battle.net",
+        "O=\"BLIZZARD ENTERTAINMENT, INC.\", L=IRVINE, S=CALIFORNIA, C=US",
     ),
-    (
-        "Exe",
-        "Google Chrome",
-        EVERYONE,
-        Cond::Publisher(GOOGLE, "*"),
-    ),
-    (
-        "Exe",
-        "Mozilla Firefox",
-        EVERYONE,
-        Cond::Publisher(MOZILLA, "*"),
-    ),
-    (
-        "Script",
-        "Scripts em Program Files",
-        EVERYONE,
-        Cond::Path(r"%PROGRAMFILES%\*"),
-    ),
-    (
-        "Script",
-        "Scripts do Windows",
-        EVERYONE,
-        Cond::Path(r"%WINDIR%\*"),
-    ),
-    (
-        "Script",
-        "Scripts dos Administradores",
-        ADMINS,
-        Cond::Path("*"),
-    ),
-    (
-        "Script",
-        "Scripts da Microsoft",
-        EVERYONE,
-        Cond::Publisher(MICROSOFT, "*"),
-    ),
-    (
-        "Msi",
-        "Instaladores do Windows",
-        EVERYONE,
-        Cond::Path(r"%WINDIR%\Installer\*"),
-    ),
-    ("Msi", "MSI dos Administradores", ADMINS, Cond::Path("*")),
 ];
 
-/// Marca donde `enforce` mete una regla "*" por cada cuenta del grupo
-/// Administradores. Con UAC, un administrador sin elevar lleva ese grupo como
-/// "solo denegar" y AppLocker no le aplica el Allow del grupo; su propio SID
-/// si cuenta, asi que tampoco queda bloqueado sin elevar.
-const ADMIN_ACCOUNTS: &str = "    <!-- AEGN: contas de administrador -->\n";
+/// Marca donde `enforce` mete las reglas Deny de cada cuenta de alumno.
+const STUDENT_RULES: &str = "    <!-- AEGN: contas de aluno -->\n";
 
-/// PowerShell que sustituye ADMIN_ACCOUNTS en `$xml` por las reglas de las
-/// cuentas (locales, de dominio o de Entra ID) del grupo Administradores.
-#[cfg(windows)]
-fn admin_accounts_script() -> String {
+/// Escapa un valor para un atributo XML.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn xml_attr(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+}
+
+/// Regla Deny de `BLOCKED[i]`, con `__ID__`, `__SID__` y `__CONTA__` para que
+/// el PowerShell ponga el GUID, el SID y el nombre de cada alumno.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn deny_template(name: &str, publisher: &str) -> String {
     format!(
-        r#"$contas = @()
-try {{
-  $g = Get-CimInstance Win32_Group -Filter "SID='{ADMINS}'"
-  $contas = @(Get-CimAssociatedInstance -InputObject $g -Association Win32_GroupUser |
-    Where-Object {{ $_.SID -match '^S-1-(5-21|12-1)-' }})
-}} catch {{ Write-Output "[aviso] Não foi possível ler os membros de Administradores: $_" }}
-$marca = '{mark}'
-while (($i = $xml.IndexOf($marca)) -ge 0) {{
-  $regras = foreach ($c in $contas) {{
-    $nome = [Security.SecurityElement]::Escape("{RULE_TAG}: Administrador $($c.Domain)\$($c.Name)")
-    "    <FilePathRule Id=""$([guid]::NewGuid())"" Name=""$nome"" Description=""AEGN Security - Escola AEGN"" UserOrGroupSid=""$($c.SID)"" Action=""Allow""><Conditions><FilePathCondition Path=""*"" /></Conditions></FilePathRule>`n"
-  }}
-  $xml = $xml.Remove($i, $marca.Length).Insert($i, (-join $regras))
-}}
-Write-Output ("Contas de administrador sem bloqueio: " + (($contas | ForEach-Object {{ $_.Name }}) -join ', '))"#,
-        mark = ADMIN_ACCOUNTS.trim_end_matches('\n'),
+        "    <FilePublisherRule Id=\"__ID__\" Name=\"{RULE_TAG}: {name} (__CONTA__)\" \
+         Description=\"AEGN Security - Escola AEGN\" UserOrGroupSid=\"__SID__\" Action=\"Deny\">\n\
+         \x20     <Conditions><FilePublisherCondition PublisherName=\"{}\" ProductName=\"*\" BinaryName=\"*\">\
+         <BinaryVersionRange LowSection=\"*\" HighSection=\"*\" /></FilePublisherCondition></Conditions>\n\
+         \x20   </FilePublisherRule>\n",
+        xml_attr(publisher)
     )
 }
 
-/// Politica AppLocker en XML. `audit_only` la deja en modo AuditOnly.
+/// PowerShell que sustituye STUDENT_RULES en `$xml` por las reglas Deny de
+/// cada alumno: cuentas locales y perfiles del equipo (dominio o Entra ID) que
+/// no sean miembros directos de Administradores.
+#[cfg(windows)]
+fn students_script() -> String {
+    let templates: Vec<String> = BLOCKED
+        .iter()
+        .map(|(n, p)| format!("@'\n{}'@", deny_template(n, p)))
+        .collect();
+    format!(
+        r#"$admins = @()
+try {{
+  $g = Get-CimInstance Win32_Group -Filter "SID='{ADMINS}'"
+  $admins = @(Get-CimAssociatedInstance -InputObject $g -Association Win32_GroupUser | ForEach-Object {{ $_.SID }})
+}} catch {{ throw "não foi possível ler os membros de Administradores: $_" }}
+$contas = @{{}}
+Get-CimInstance Win32_UserAccount -Filter 'LocalAccount=True' | ForEach-Object {{ $contas[$_.SID] = $_.Name }}
+Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList' | ForEach-Object {{
+  $sid = $_.PSChildName
+  $dir = (Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue).ProfileImagePath
+  if ($dir -and -not $contas.ContainsKey($sid)) {{ $contas[$sid] = Split-Path -Leaf $dir }}
+}}
+$alunos = @($contas.Keys | Where-Object {{ $_ -match '^S-1-(5-21|12-1)-' -and $admins -notcontains $_ }} | Sort-Object)
+$modelos = @(
+{templates}
+)
+$regras = foreach ($sid in $alunos) {{
+  $conta = [Security.SecurityElement]::Escape($contas[$sid])
+  foreach ($m in $modelos) {{ $m.Replace('__ID__', [guid]::NewGuid().ToString()).Replace('__SID__', $sid).Replace('__CONTA__', $conta) }}
+}}
+$xml = $xml.Replace('{mark}', (-join $regras))
+Write-Output ("Contas de aluno com a lista negra: " + (($alunos | ForEach-Object {{ $contas[$_] }}) -join ', '))"#,
+        templates = templates.join(",\n"),
+        mark = STUDENT_RULES.trim_end_matches('\n'),
+    )
+}
+
+/// Politica AppLocker en XML: Allow "*" a Todos y el hueco de las reglas de
+/// los alumnos. `audit_only` la deja en modo AuditOnly.
 fn applocker_policy_xml(audit_only: bool) -> String {
     let mode = if audit_only { "AuditOnly" } else { "Enabled" };
-    let mut xml = String::from("<AppLockerPolicy Version=\"1\">\n");
-    for collection in ["Exe", "Script", "Msi"] {
-        xml.push_str(&format!(
-            "  <RuleCollection Type=\"{collection}\" EnforcementMode=\"{mode}\">\n"
-        ));
-        for (i, (_, name, sid, cond)) in RULES.iter().enumerate().filter(|(_, r)| r.0 == collection)
-        {
-            let (kind, condition) = match cond {
-                Cond::Path(path) => ("FilePathRule", format!("<FilePathCondition Path=\"{path}\" />")),
-                Cond::Publisher(publisher, product) => (
-                    "FilePublisherRule",
-                    format!(
-                        "<FilePublisherCondition PublisherName=\"{publisher}\" ProductName=\"{product}\" BinaryName=\"*\">\
-                         <BinaryVersionRange LowSection=\"*\" HighSection=\"*\" /></FilePublisherCondition>"
-                    ),
-                ),
-            };
-            xml.push_str(&format!(
-                "    <{kind} Id=\"ae6e0000-0000-4000-8000-0000000000{:02x}\" Name=\"{RULE_TAG}: {name}\" \
-                 Description=\"AEGN Security - Escola AEGN\" UserOrGroupSid=\"{sid}\" Action=\"Allow\">\n\
-                 \x20     <Conditions>{condition}</Conditions>\n\
-                 \x20   </{kind}>\n",
-                i + 1
-            ));
-        }
-        xml.push_str(ADMIN_ACCOUNTS);
-        xml.push_str("  </RuleCollection>\n");
-    }
-    xml.push_str("</AppLockerPolicy>");
-    xml
+    format!(
+        "<AppLockerPolicy Version=\"1\">\n\
+         \x20 <RuleCollection Type=\"Exe\" EnforcementMode=\"{mode}\">\n\
+         \x20   <FilePathRule Id=\"ae6e0000-0000-4000-8000-000000000001\" Name=\"{RULE_TAG}: Permitir tudo\" \
+         Description=\"AEGN Security - Escola AEGN\" UserOrGroupSid=\"{EVERYONE}\" Action=\"Allow\">\n\
+         \x20     <Conditions><FilePathCondition Path=\"*\" /></Conditions>\n\
+         \x20   </FilePathRule>\n\
+         {STUDENT_RULES}\
+         \x20 </RuleCollection>\n\
+         </AppLockerPolicy>"
+    )
 }
 
 /// Muestra el estado actual de las politicas de restriccion.
@@ -188,7 +137,7 @@ if ($svc) { Write-Output ("Serviço AppIDSvc (AppLocker): " + $svc.Status) }
 else { Write-Output "Serviço AppIDSvc não encontrado." }
 foreach ($c in (Get-AppLockerPolicy -Effective).RuleCollections) {
   Write-Output ("--- " + $c.RuleCollectionType + ": " + $c.EnforcementMode + " ---")
-  $c | ForEach-Object { "  " + $_.Action + "  " + $_.Name + "  " + (@($_.PathConditions) + @($_.PublisherConditions) -join ', ') }
+  $c | ForEach-Object { "  " + $_.Action + "  " + $_.Name + "  " + (@($_.PathConditions) + @($_.PublisherConditions | ForEach-Object { $_.PublisherName }) -join ', ') }
 }
 "#;
         print!("{}", crate::ps::run(ps)?);
@@ -203,7 +152,7 @@ foreach ($c in (Get-AppLockerPolicy -Effective).RuleCollections) {
     }
 }
 
-/// Aplica el bloqueo de ejecucion en carpetas de usuario. Dry-run salvo `apply`.
+/// Aplica la lista negra a las cuentas de alumno. Dry-run salvo `apply`.
 /// Con `audit_only` no bloquea: solo registra eventos de lo que bloquearia.
 pub fn enforce(apply: bool, audit_only: bool) -> Result<()> {
     let xml = applocker_policy_xml(audit_only);
@@ -214,6 +163,10 @@ pub fn enforce(apply: bool, audit_only: bool) -> Result<()> {
     if !apply {
         println!("[simulação] Seria aplicada a seguinte política AppLocker:\n");
         println!("{xml}");
+        println!("\n[simulação] No lugar da marca, para cada conta de aluno, um Deny por editor:");
+        for (name, publisher) in BLOCKED {
+            println!("  {name}: {publisher}");
+        }
         println!("\n[simulação] Execute com --aplicar para a aplicar (requer administrador).");
         println!("[nota] O serviço Application Identity (AppIDSvc) tem de estar em execução.");
         return Ok(());
@@ -230,7 +183,7 @@ $ErrorActionPreference = 'Stop'
 $xml = @'
 {xml}
 '@
-{admins}
+{students}
 $tmp = Join-Path $env:TEMP 'aegn-applocker.xml'
 Set-Content -Path $tmp -Value $xml -Encoding UTF8
 Set-AppLockerPolicy -XmlPolicy $tmp -Merge
@@ -239,7 +192,7 @@ Write-Output "Política AEGN aplicada e fundida com a existente."
 {service}
 "#,
             strip = strip_script(),
-            admins = admin_accounts_script(),
+            students = students_script(),
             service = SERVICE_PS,
         );
         print!("{}", crate::ps::run(&ps)?);
@@ -383,93 +336,45 @@ $global:LASTEXITCODE = 0"#;
 mod tests {
     use super::*;
 
-    fn attr<'a>(rule: &'a str, name: &str) -> &'a str {
-        let start = rule.find(&format!("{name}=\"")).unwrap() + name.len() + 2;
-        &rule[start..start + rule[start..].find('"').unwrap()]
-    }
-
-    fn rules(xml: &str) -> Vec<&str> {
-        xml.split("Rule Id=").skip(1).collect()
-    }
-
     #[test]
-    fn ids_son_guids_validos_y_unicos() {
+    fn permite_todo_a_todos() {
         let xml = applocker_policy_xml(false);
-        let ids: Vec<&str> = rules(&xml)
-            .iter()
-            .map(|r| &r[1..r[1..].find('"').unwrap() + 1])
-            .collect();
-        assert!(!ids.is_empty());
-        for id in &ids {
-            let parts: Vec<&str> = id.split('-').collect();
-            let lens: Vec<usize> = parts.iter().map(|p| p.len()).collect();
-            assert_eq!(lens, [8, 4, 4, 4, 12], "Id mal formado: {id}");
-            assert!(
-                id.chars().all(|c| c == '-' || c.is_ascii_hexdigit()),
-                "Id no hex: {id}"
-            );
-        }
-        let mut unique = ids.clone();
-        unique.sort();
-        unique.dedup();
-        assert_eq!(unique.len(), ids.len(), "Ids repetidos");
-    }
-
-    #[test]
-    fn todas_las_reglas_llevan_la_etiqueta() {
-        // revert/enforce localizan las reglas propias por este prefijo.
-        let xml = applocker_policy_xml(false);
-        for rule in rules(&xml) {
-            assert!(
-                attr(rule, "Name").starts_with(RULE_TAG),
-                "regla sin etiqueta: {rule}"
-            );
-        }
-    }
-
-    #[test]
-    fn sin_deny_y_admins_libres() {
-        // Un Deny tambien alcanza a los administradores.
-        let xml = applocker_policy_xml(false);
+        assert!(xml.contains(&format!("UserOrGroupSid=\"{EVERYONE}\" Action=\"Allow\"")));
+        assert!(xml.contains("<FilePathCondition Path=\"*\" />"));
+        // Ningun Deny fijo: los Deny solo van a cuentas de alumno.
         assert!(!xml.contains("Action=\"Deny\""));
-        for c in ["Exe", "Script", "Msi"] {
-            assert!(
-                RULES
-                    .iter()
-                    .any(|r| r.0 == c && r.2 == ADMINS && matches!(r.3, Cond::Path("*"))),
-                "admins sin \"*\" en {c}"
-            );
-        }
+        assert_eq!(xml.matches(STUDENT_RULES).count(), 1);
     }
 
     #[test]
-    fn hueco_para_las_cuentas_admin_en_cada_coleccion() {
-        let xml = applocker_policy_xml(false);
-        assert_eq!(xml.matches(ADMIN_ACCOUNTS).count(), 3);
-        // Comentario XML valido: sin "--" dentro.
-        assert!(!ADMIN_ACCOUNTS.trim()[4..ADMIN_ACCOUNTS.trim().len() - 3].contains("--"));
-    }
-
-    #[test]
-    fn permite_chrome_y_microsoft_por_editor() {
-        let xml = applocker_policy_xml(false);
-        for p in [MICROSOFT, GOOGLE, MOZILLA] {
-            assert!(xml.contains(&format!("PublisherName=\"{p}\"")), "falta {p}");
-        }
-        assert_eq!(
-            xml.matches("<FilePublisherRule").count(),
-            xml.matches("</FilePublisherRule>").count()
-        );
-    }
-
-    #[test]
-    fn colecciones_y_modo() {
+    fn solo_toca_la_coleccion_exe() {
         for (audit, mode) in [(false, "Enabled"), (true, "AuditOnly")] {
             let xml = applocker_policy_xml(audit);
-            for c in ["Exe", "Script", "Msi"] {
-                let tag = format!("<RuleCollection Type=\"{c}\" EnforcementMode=\"{mode}\">");
-                assert!(xml.contains(&tag), "falta {tag}");
-            }
+            assert!(xml.contains(&format!(
+                "<RuleCollection Type=\"Exe\" EnforcementMode=\"{mode}\">"
+            )));
+            assert_eq!(xml.matches("<RuleCollection").count(), 1);
         }
+    }
+
+    #[test]
+    fn plantillas_deny_por_editor() {
+        for (name, publisher) in BLOCKED {
+            let t = deny_template(name, publisher);
+            assert!(t.contains("Action=\"Deny\""));
+            assert!(t.contains("UserOrGroupSid=\"__SID__\""));
+            assert!(t.contains(&format!("Name=\"{RULE_TAG}: {name}")));
+            assert!(!t.contains("'@"), "rompería el here-string de PowerShell");
+        }
+        // Las comillas del editor de Blizzard van escapadas.
+        let b = deny_template("Battle.net", BLOCKED[5].1);
+        assert!(b.contains("PublisherName=\"O=&quot;BLIZZARD ENTERTAINMENT, INC.&quot;,"));
+    }
+
+    #[test]
+    fn marca_es_un_comentario_xml_valido() {
+        let c = STUDENT_RULES.trim();
+        assert!(c.starts_with("<!--") && c.ends_with("-->"));
+        assert!(!c[4..c.len() - 3].contains("--"));
     }
 }
