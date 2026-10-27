@@ -6,6 +6,25 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     Write-Host 'Abra o PowerShell como administrador.' -ForegroundColor Red
     return
 }
+# Resgate imediato, antes de descarregar nada: desbloqueia o computador
+# mesmo que a instalacao falhe.
+$ErrorActionPreference = 'Continue'
+Write-Host 'A desbloquear (AppLocker, firewall, tarefa, perfis)...'
+$x = '<AppLockerPolicy Version="1"><RuleCollection Type="Exe" EnforcementMode="NotConfigured" /><RuleCollection Type="Msi" EnforcementMode="NotConfigured" /><RuleCollection Type="Script" EnforcementMode="NotConfigured" /><RuleCollection Type="Dll" EnforcementMode="NotConfigured" /><RuleCollection Type="Appx" EnforcementMode="NotConfigured" /></AppLockerPolicy>'
+$d = Join-Path $env:ProgramData 'AEGN'
+New-Item -ItemType Directory -Force -Path $d | Out-Null
+try { Get-AppLockerPolicy -Local -Xml | Set-Content (Join-Path $d ('applocker-copia-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.xml')) } catch { }
+$v = Join-Path $env:TEMP 'aegn-vazio.xml'
+Set-Content $v $x
+try { Set-AppLockerPolicy -XmlPolicy $v -ErrorAction Stop; Write-Host '[ok] AppLocker vazio' -ForegroundColor Green } catch { Write-Host "[erro] AppLocker: $_" -ForegroundColor Red }
+& sc.exe config AppIDSvc start= demand | Out-Null
+& sc.exe stop AppIDSvc | Out-Null
+Get-NetFirewallRule -Group 'AEGN-RemoteAccess' -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+Unregister-ScheduledTask -TaskName 'AEGN-Agent' -Confirm:$false -ErrorAction SilentlyContinue
+[gc]::Collect()
+Get-ChildItem 'Registry::HKEY_USERS' | Where-Object { $_.PSChildName -like 'AEGN_*' } | ForEach-Object { & reg.exe unload "HKU\$($_.PSChildName)" 2>&1 | Out-Null }
+$ErrorActionPreference = 'Stop'
+
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 $u = 'https://github.com/willkomen2/aegn-agent/releases/latest/download/'
 $w = New-Object Net.WebClient
