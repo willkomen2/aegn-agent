@@ -98,7 +98,8 @@ Tudo o que altera o computador é **simulação** até se passar `--aplicar`.
 | Comando | O que faz |
 |---|---|
 | `aegn` / `aegn menu` | Menu interativo: saída ao vivo; em modo real pede a senha. |
-| `aegn executar` | Processo completo: inventário, administradores, desinstalação, limpeza da lista negra, AppLocker e firewall. Opções `--simples`, `--sem-rustdesk`, `--sem-opencode`, `--sem-limpeza`, `--sem-politicas`, `--so-auditoria`, `--sem-firewall`, `--aplicar`. |
+| `aegn executar` | Processo completo: inventário, administradores, desinstalação, limpeza da lista negra, AppLocker e firewall. Opções `--simples`, `--sem-rustdesk`, `--sem-opencode`, `--sem-limpeza`, `--sem-politicas`, `--so-auditoria`, `--sem-firewall`, `--sem-navegador`, `--aplicar`. |
+| `aegn navegador estado\|impor\|reverter [--aplicar]` | Chrome, Edge e Firefox apagam as cookies ao fechar: ao terminar a sessão do Windows não fica nenhuma conta Google aberta. O MSI aplica-o ao instalar e ao atualizar. |
 | `aegn estado` | Estado do AppLocker/AppIDSvc, regras de firewall, tarefa agendada e senha. |
 | `aegn reverter` | Desfaz tudo o que o agente aplicou (não reinstala software). |
 | `aegn auditoria listar` | Inventário: data de instalação, quem instalou, editor e tamanho (registo + Microsoft Store). |
@@ -243,7 +244,7 @@ Em Windows, à mão:
 ```powershell
 cargo build --release
 dotnet tool install --global wix --version 5.0.2
-wix build installer\aegn.wxs -arch x64 -d Version=0.4.0 -d ExePath=target\release\aegn.exe -o AEGN-Security-0.4.0-x64.msi
+wix build installer\aegn.wxs -arch x64 -d Version=0.5.0 -d ExePath=target\release\aegn.exe -o AEGN-Security-0.5.0-x64.msi
 ```
 
 Em Linux pode verificar-se que o código de Windows compila (sem ligar):

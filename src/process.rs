@@ -6,7 +6,7 @@
 //!
 //! Respeta el principio de dry-run: nada se aplica de verdad salvo `apply=true`.
 
-use crate::{audit, auth, firewall, policy, schedule};
+use crate::{audit, auth, browser, firewall, policy, schedule};
 use anyhow::Result;
 
 /// Configuracion de una ejecucion del proceso. La arma el menu (toggles) o la
@@ -24,6 +24,9 @@ pub struct ProcessConfig {
     pub audit_only: bool,
     /// Bloqueo saliente de puertos de herramientas de acceso remoto.
     pub firewall: bool,
+    /// Directivas de Chrome, Edge y Firefox que borran cookies (y con ellas las
+    /// cuentas Google) al cerrar el navegador.
+    pub browser: bool,
     /// true = cambios reales (requiere admin); false = dry-run (por defecto).
     pub apply: bool,
 }
@@ -38,6 +41,7 @@ impl Default for ProcessConfig {
             apply_policies: true,
             audit_only: false,
             firewall: true,
+            browser: true,
             apply: false,
         }
     }
@@ -103,6 +107,12 @@ pub fn run(cfg: &ProcessConfig) -> Result<()> {
         println!();
     }
 
+    if cfg.browser {
+        println!("-- Navegadores: contas Google ao terminar a sessão --");
+        browser::enforce(cfg.apply)?;
+        println!();
+    }
+
     if !failed.is_empty() {
         println!(
             "[aviso] Não foi possível desinstalar: {}",
@@ -124,6 +134,9 @@ pub fn status_all() -> Result<()> {
     println!("-- Firewall --");
     firewall::status()?;
     println!();
+    println!("-- Navegadores --");
+    browser::status()?;
+    println!();
     println!("-- Tarefa agendada --");
     schedule::status()?;
     println!();
@@ -142,6 +155,9 @@ pub fn revert_all(apply: bool) -> Result<()> {
     println!();
     println!("-- Firewall --");
     firewall::revert(apply)?;
+    println!();
+    println!("-- Navegadores --");
+    browser::revert(apply)?;
     println!();
     println!("-- Tarefa agendada --");
     schedule::remove(apply)?;

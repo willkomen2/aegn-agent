@@ -14,6 +14,13 @@ caso a senha fica `admin` até a alterar com `aegn senha alterar`.
 
 ### Novidades
 
+- **Contas Google fechadas ao terminar a sessão** (0.5.0): Chrome, Edge e
+  Firefox apagam as cookies ao fechar, e com elas as contas Google (ou outras)
+  que ficaram abertas; o Chrome deixa de permitir iniciar sessão no navegador
+  e de sincronizar. O instalador e a atualização automática aplicam-no.
+  Ver/retirar: `aegn navegador estado`, `aegn navegador reverter --aplicar`;
+  no processo, `--sem-navegador`.
+
 - **Desinstalação por defeito** de jogos e lançadores (Steam, Riot Client e
   Vanguard, VALORANT, League of Legends, Epic Games, Battle.net, EA app,
   Ubisoft Connect, GOG Galaxy, Roblox), Spotify, Lively Wallpaper, Custom

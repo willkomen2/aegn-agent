@@ -6,6 +6,8 @@
     lá, o que a tarefa SYSTEM exige) e adiciona essa pasta ao PATH do sistema.
   - Instala o atualizar.ps1 e regista a tarefa AEGN-Atualizar (SYSTEM), que
     instala sozinha os releases novos do GitHub, sem UAC nem senha.
+  - Aplica as diretivas de navegador: Chrome, Edge e Firefox apagam as cookies
+    (e as contas Google abertas) ao fechar. Ao desinstalar retiram-se.
   - Ao desinstalar, elimina as tarefas AEGN-Agent e AEGN-Atualizar (apontariam
     para ficheiros que já não existem) e a senha guardada em HKLM\SOFTWARE\AEGN.
     Numa atualização não se apaga nada disso: o MSI antigo desinstala-se
@@ -14,7 +16,7 @@
     "aegn reverter" com a opção aplicar antes de desinstalar (o desinstalar.cmd faz isso).
 
   Compilar (Windows):
-    wix build installer\aegn.wxs -arch x64 -d Version=0.4.0 -d ExePath=target\release\aegn.exe -o AEGN-Security.msi
+    wix build installer\aegn.wxs -arch x64 -d Version=0.5.0 -d ExePath=target\release\aegn.exe -o AEGN-Security.msi
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="AEGN Security"
@@ -85,6 +87,21 @@
                   Impersonate="no"
                   Return="ignore" />
 
+    <!-- Diretivas de navegador (apagar cookies e contas Google ao fechar). Correm
+         como SYSTEM, que o aegn não obriga a pôr a senha. -->
+    <CustomAction Id="AplicarNavegador"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[INSTALLFOLDER]aegn.exe&quot; navegador impor --aplicar"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+    <CustomAction Id="RetirarNavegador"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[INSTALLFOLDER]aegn.exe&quot; navegador reverter --aplicar"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
     <InstallExecuteSequence>
       <Custom Action="RemoverTarefa" Before="RemoveFiles"
               Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
@@ -92,7 +109,11 @@
               Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
       <Custom Action="RemoverSenha" Before="RemoveFiles"
               Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+      <Custom Action="RetirarNavegador" Before="RemoveFiles"
+              Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
       <Custom Action="RegistarAtualizacao" After="InstallFiles"
+              Condition="NOT REMOVE=&quot;ALL&quot;" />
+      <Custom Action="AplicarNavegador" After="RegistarAtualizacao"
               Condition="NOT REMOVE=&quot;ALL&quot;" />
     </InstallExecuteSequence>
   </Package>

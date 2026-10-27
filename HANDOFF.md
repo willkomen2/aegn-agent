@@ -13,7 +13,7 @@ estándar, con mecanismos nativos y auditables de Windows. **No hay dimensión
 ofensiva de ciberseguridad**: nada de sigilo, exfiltración ni evasión; todo es
 transparente y reversible.
 
-## Estado actual (v0.4.0)
+## Estado actual (v0.5.0)
 
 ```
 src/
@@ -25,6 +25,7 @@ src/
   junk.rs      Lista negra (reglas) y lista blanca (sistema): lógica pura con tests
   policy.rs    AppLocker Exe/Script/Msi, modo auditoría, eventos, revert
   firewall.rs  Bloqueo saliente de RustDesk/AnyDesk/TeamViewer
+  browser.rs   Directivas de Chrome/Edge/Firefox: borrar cookies (cuentas Google) al cerrar
   schedule.rs  Tarea SYSTEM diaria (solo si aegn.exe está en Program Files)
   update.rs    `aegn atualizar`: consulta el último release y lanza la tarea AEGN-Atualizar
   ps.rs        Ejecuta PowerShell (solo Windows)

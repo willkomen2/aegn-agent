@@ -15,6 +15,7 @@
 
 mod audit;
 mod auth;
+mod browser;
 mod firewall;
 mod junk;
 mod policy;
@@ -72,6 +73,9 @@ enum Command {
         /// Não criar as regras de firewall contra acesso remoto.
         #[arg(long, alias = "no-firewall")]
         sem_firewall: bool,
+        /// Não aplicar as diretivas que apagam as contas Google ao fechar o navegador.
+        #[arg(long, alias = "no-browser")]
+        sem_navegador: bool,
         /// Aplica as alterações (por defeito apenas simula). Pede a senha.
         #[arg(long, alias = "apply")]
         aplicar: bool,
@@ -97,6 +101,13 @@ enum Command {
         action: FirewallAction,
     },
 
+    /// Navegadores: apagar cookies e contas Google ao fechar (Chrome, Edge, Firefox).
+    #[command(alias = "browser")]
+    Navegador {
+        #[command(subcommand)]
+        action: BrowserAction,
+    },
+
     /// Tarefa agendada (SYSTEM) que volta a aplicar o processo todos os dias.
     #[command(alias = "schedule")]
     Tarefa {
@@ -104,11 +115,11 @@ enum Command {
         action: ScheduleAction,
     },
 
-    /// Estado de todas as proteções: AppLocker, firewall, tarefa e senha.
+    /// Estado de todas as proteções: AppLocker, firewall, navegador, tarefa e senha.
     #[command(alias = "status")]
     Estado,
 
-    /// Desfaz tudo o que o agente aplicou (AppLocker, firewall e tarefa).
+    /// Desfaz tudo o que o agente aplicou (AppLocker, firewall, navegador e tarefa).
     #[command(alias = "revert")]
     Reverter {
         #[arg(long, alias = "apply")]
@@ -233,6 +244,25 @@ enum FirewallAction {
 }
 
 #[derive(Subcommand)]
+enum BrowserAction {
+    /// Mostra que diretivas de navegador estão aplicadas.
+    #[command(alias = "status")]
+    Estado,
+    /// Aplica as diretivas: apagar cookies e contas ao fechar o navegador.
+    #[command(alias = "enforce")]
+    Impor {
+        #[arg(long, alias = "apply")]
+        aplicar: bool,
+    },
+    /// Retira as diretivas do AEGN.
+    #[command(alias = "revert")]
+    Reverter {
+        #[arg(long, alias = "apply")]
+        aplicar: bool,
+    },
+}
+
+#[derive(Subcommand)]
 enum ScheduleAction {
     /// Estado da tarefa e últimas linhas do registo.
     #[command(alias = "status")]
@@ -278,6 +308,9 @@ impl Command {
             }
             | Command::Firewall {
                 action: FirewallAction::Impor { aplicar } | FirewallAction::Reverter { aplicar },
+            }
+            | Command::Navegador {
+                action: BrowserAction::Impor { aplicar } | BrowserAction::Reverter { aplicar },
             }
             | Command::Tarefa {
                 action:
@@ -343,6 +376,7 @@ fn main() -> Result<()> {
             sem_politicas,
             so_auditoria,
             sem_firewall,
+            sem_navegador,
             aplicar,
         }) => process::run(&process::ProcessConfig {
             simple: simples,
@@ -352,6 +386,7 @@ fn main() -> Result<()> {
             apply_policies: !sem_politicas,
             audit_only: so_auditoria,
             firewall: !sem_firewall,
+            browser: !sem_navegador,
             apply: aplicar,
         })?,
         Some(Command::Auditoria { action }) => match action {
@@ -377,6 +412,11 @@ fn main() -> Result<()> {
             FirewallAction::Estado => firewall::status()?,
             FirewallAction::Impor { aplicar } => firewall::enforce(aplicar)?,
             FirewallAction::Reverter { aplicar } => firewall::revert(aplicar)?,
+        },
+        Some(Command::Navegador { action }) => match action {
+            BrowserAction::Estado => browser::status()?,
+            BrowserAction::Impor { aplicar } => browser::enforce(aplicar)?,
+            BrowserAction::Reverter { aplicar } => browser::revert(aplicar)?,
         },
         Some(Command::Tarefa { action }) => match action {
             ScheduleAction::Estado => schedule::status()?,
@@ -426,6 +466,8 @@ mod tests {
         // Instala o release oficial pela tarefa SYSTEM: não pede a senha.
         assert!(!parse(&["atualizar", "--aplicar"]).applies());
         assert!(!parse(&["atualizar", "estado"]).applies());
+        assert!(parse(&["navegador", "impor", "--aplicar"]).applies());
+        assert!(!parse(&["navegador", "estado"]).applies());
     }
 
     #[test]

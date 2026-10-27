@@ -46,6 +46,7 @@ enum Entry {
     TogglePolicies,
     ToggleAuditOnly,
     ToggleFirewall,
+    ToggleBrowser,
     ToggleApply,
     Audit,
     Suspects,
@@ -82,6 +83,7 @@ const ENTRIES: &[Entry] = &[
     Entry::TogglePolicies,
     Entry::ToggleAuditOnly,
     Entry::ToggleFirewall,
+    Entry::ToggleBrowser,
     Entry::ToggleApply,
     Entry::Header("FERRAMENTAS"),
     Entry::Audit,
@@ -207,6 +209,9 @@ impl App {
             Entry::ToggleFirewall => {
                 format!("{} Firewall: acesso remoto", chk(self.cfg.firewall))
             }
+            Entry::ToggleBrowser => {
+                format!("{} Sair das contas Google", chk(self.cfg.browser))
+            }
             Entry::ToggleApply => format!("{} APLICAR DE FACTO", chk(self.cfg.apply)),
             Entry::Audit => "Auditar software instalado".to_string(),
             Entry::Suspects => "Ver software não autorizado".to_string(),
@@ -234,6 +239,7 @@ impl App {
             Entry::TogglePolicies => "AppLocker: só se executam programas, scripts e MSI do Windows e de Program Files (os administradores, tudo). AppData\\Local e Transferências, negados.",
             Entry::ToggleAuditOnly => "AppLocker em modo auditoria: não bloqueia, só regista o que bloquearia. Use-o primeiro em cada sala e reveja os 'Eventos do AppLocker'.",
             Entry::ToggleFirewall => "Bloqueia a saída pelas portas do RustDesk, AnyDesk e TeamViewer.",
+            Entry::ToggleBrowser => "Chrome, Edge e Firefox apagam cookies (e as contas Google abertas) ao fechar, e portanto ao terminar a sessão do Windows. Desativa a sincronização e o início de sessão no Chrome.",
             Entry::ToggleApply => "Ativo: alterações reais (requer administrador e a senha do AEGN). Inativo: apenas simula.",
             Entry::Audit => "Lista o software instalado sem alterar nada.",
             Entry::Suspects => "Mostra só o que incumpre as regras da escola (Roblox, Spotify, Lively, cursores, jogos, acesso remoto).",
@@ -241,11 +247,11 @@ impl App {
             Entry::Evidence => "Instaladores descarregados, eventos do Windows com a conta que instalou e programas de arranque automático.",
             Entry::History => "Quando, em que perfil e como foi desinstalado cada programa.",
             Entry::Admins => "Membros do grupo Administradores. Nenhum aluno deve lá estar.",
-            Entry::Status => "AppLocker e AppIDSvc, regras de firewall, tarefa agendada e senha.",
+            Entry::Status => "AppLocker e AppIDSvc, regras de firewall, navegadores, tarefa agendada e senha.",
             Entry::Events => "Últimos bloqueios (e avisos de auditoria) registados pelo AppLocker.",
             Entry::ScheduleInstall => "Tarefa SYSTEM que volta a aplicar o processo no arranque e todos os dias. Requer o aegn.exe em Program Files.",
             Entry::Update => "Compara com o último release do GitHub. Com APLICAR, instala-o já pela tarefa AEGN-Atualizar (SYSTEM): sem administrador nem senha.",
-            Entry::RevertAll => "Retira as regras AppLocker e de firewall do AEGN e a tarefa agendada.",
+            Entry::RevertAll => "Retira as regras AppLocker e de firewall, as diretivas de navegador do AEGN e a tarefa agendada.",
             Entry::Quit => "Fecha o AEGN Security.",
         }
     }
@@ -268,6 +274,7 @@ impl App {
                 "AppLocker em modo auditoria",
             ),
             (c.firewall, "Firewall: portas de acesso remoto"),
+            (c.browser, "Navegadores: sair das contas ao fechar"),
         ]
         .into_iter()
         .filter_map(|(on, step)| on.then_some(step))
@@ -288,6 +295,7 @@ impl App {
                     (!c.apply_policies, "--sem-politicas"),
                     (c.apply_policies && c.audit_only, "--so-auditoria"),
                     (!c.firewall, "--sem-firewall"),
+                    (!c.browser, "--sem-navegador"),
                 ] {
                     if on {
                         a.push(flag);
@@ -399,6 +407,7 @@ impl App {
             Entry::TogglePolicies => &mut c.apply_policies,
             Entry::ToggleAuditOnly => &mut c.audit_only,
             Entry::ToggleFirewall => &mut c.firewall,
+            Entry::ToggleBrowser => &mut c.browser,
             Entry::ToggleApply => &mut c.apply,
             _ => return false,
         };
@@ -775,6 +784,7 @@ fn draw_detail(f: &mut Frame, app: &App, area: Rect, block: Block<'static>) {
             | Entry::TogglePolicies
             | Entry::ToggleAuditOnly
             | Entry::ToggleFirewall
+            | Entry::ToggleBrowser
             | Entry::ToggleApply
     );
     if shows_plan {
