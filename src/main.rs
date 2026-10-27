@@ -22,6 +22,7 @@ mod process;
 mod ps;
 mod schedule;
 mod tui;
+mod update;
 
 use anyhow::Result;
 use clap::{Arg, ArgAction, CommandFactory, FromArgMatches, Parser, Subcommand};
@@ -115,6 +116,23 @@ enum Command {
         #[command(subcommand)]
         action: SenhaAction,
     },
+
+    /// Procura uma versão nova no GitHub. Com --aplicar instala-a (sem administrador).
+    #[command(alias = "update", args_conflicts_with_subcommands = true)]
+    Atualizar {
+        #[command(subcommand)]
+        action: Option<UpdateAction>,
+        /// Lança já a tarefa de atualização (corre como SYSTEM: sem UAC nem senha).
+        #[arg(long, alias = "apply")]
+        aplicar: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum UpdateAction {
+    /// Estado da tarefa de atualização automática e últimas linhas do registo.
+    #[command(alias = "status")]
+    Estado,
 }
 
 #[derive(Subcommand)]
@@ -338,6 +356,10 @@ fn main() -> Result<()> {
             SenhaAction::Estado => auth::status()?,
             SenhaAction::Verificar => auth::check()?,
         },
+        Some(Command::Atualizar { action, aplicar }) => match action {
+            Some(UpdateAction::Estado) => update::status()?,
+            None => update::run(aplicar)?,
+        },
     }
 
     Ok(())
@@ -362,6 +384,9 @@ mod tests {
         assert!(parse(&["tarefa", "instalar", "--aplicar"]).applies());
         assert!(!parse(&["estado"]).applies());
         assert!(!parse(&["politica", "eventos"]).applies());
+        // Instala o release oficial pela tarefa SYSTEM: não pede a senha.
+        assert!(!parse(&["atualizar", "--aplicar"]).applies());
+        assert!(!parse(&["atualizar", "estado"]).applies());
     }
 
     #[test]

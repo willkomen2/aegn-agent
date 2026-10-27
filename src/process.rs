@@ -99,6 +99,9 @@ pub fn status_all() -> Result<()> {
     println!("-- Tarefa agendada --");
     schedule::status()?;
     println!();
+    println!("-- Atualização automática --");
+    crate::update::status()?;
+    println!();
     println!("-- Senha de administração --");
     auth::status()
 }

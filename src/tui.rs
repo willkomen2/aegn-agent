@@ -51,6 +51,7 @@ enum Entry {
     Status,
     Events,
     ScheduleInstall,
+    Update,
     RevertAll,
     Quit,
 }
@@ -82,6 +83,7 @@ const ENTRIES: &[Entry] = &[
     Entry::Status,
     Entry::Events,
     Entry::ScheduleInstall,
+    Entry::Update,
     Entry::RevertAll,
     Entry::Quit,
 ];
@@ -198,6 +200,7 @@ impl App {
             Entry::Status => "Estado das proteções".to_string(),
             Entry::Events => "Eventos do AppLocker".to_string(),
             Entry::ScheduleInstall => "Instalar tarefa diária".to_string(),
+            Entry::Update => "Procurar atualizações".to_string(),
             Entry::RevertAll => "Reverter tudo do AEGN".to_string(),
             Entry::Quit => "Sair".to_string(),
         }
@@ -219,6 +222,7 @@ impl App {
             Entry::Status => "AppLocker e AppIDSvc, regras de firewall, tarefa agendada e senha.",
             Entry::Events => "Últimos bloqueios (e avisos de auditoria) registados pelo AppLocker.",
             Entry::ScheduleInstall => "Tarefa SYSTEM que volta a aplicar o processo no arranque e todos os dias. Requer o aegn.exe em Program Files.",
+            Entry::Update => "Compara com o último release do GitHub. Com APLICAR, instala-o já pela tarefa AEGN-Atualizar (SYSTEM): sem administrador nem senha.",
             Entry::RevertAll => "Retira as regras AppLocker e de firewall do AEGN e a tarefa agendada.",
             Entry::Quit => "Fecha o AEGN Security.",
         }
@@ -276,9 +280,11 @@ impl App {
             }
             Entry::ScheduleInstall => vec!["tarefa", "instalar"],
             Entry::RevertAll => vec!["reverter"],
+            Entry::Update => vec!["atualizar"],
             _ => return None,
         };
-        if c.apply && entry.destructive() {
+        // Atualizar com --aplicar não pede senha: só instala o release oficial.
+        if c.apply && (entry.destructive() || entry == Entry::Update) {
             args.push("--aplicar");
         }
         Some(args)

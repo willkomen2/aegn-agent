@@ -14,12 +14,11 @@ caso a senha fica `admin` até a alterar com `aegn senha alterar`.
 
 ### Novidades
 
-- Interface toda em português (os comandos antigos em inglês continuam a funcionar).
-- Senha de administração para tudo o que altera o computador (`--aplicar`).
-  Por defeito: `admin`.
-- Instalador MSI que adiciona o `aegn` ao PATH do sistema, e scripts
-  `instalar.cmd` / `desinstalar.cmd`.
-- Retirado o comando `gh` (não tinha utilidade para a escola).
+- **Atualização automática**: a tarefa `AEGN-Atualizar` (SYSTEM) instala
+  sozinha as versões novas publicadas no GitHub, sem UAC nem senha. Para
+  atualizar já: `aegn atualizar --aplicar`; estado: `aegn atualizar estado`.
+- A senha de administração já não se perde ao atualizar com o MSI.
+- Quem tem a 0.2.0 instala esta versão uma vez à mão; as seguintes chegam sozinhas.
 
 ### Ficheiros
 

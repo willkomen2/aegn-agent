@@ -26,7 +26,9 @@ O instalador:
   escrevem lá, o que a tarefa diária exige);
 - adiciona essa pasta ao **PATH do sistema**: em qualquer consola nova basta
   escrever `aegn`;
-- numa atualização, pede primeiro a senha atual.
+- numa atualização, pede primeiro a senha atual;
+- regista a tarefa **`AEGN-Atualizar`**, que mantém o AEGN atualizado sozinho
+  (ver [Atualização automática](#atualização-automática)).
 
 Para desinstalar: **`desinstalar.cmd`** como administrador. Pede a senha e
 pergunta se deve reverter as proteções antes de remover o programa.
@@ -54,6 +56,41 @@ aegn senha estado      # avisa se ainda é a de defeito
   administrador decidido. O essencial continua a ser que **nenhum aluno seja
   administrador**.
 
+## Atualização automática
+
+A partir da versão 0.3.0, cada computador atualiza-se sozinho a partir dos
+[releases](../../releases) deste repositório, **sem UAC nem senha**:
+
+- o MSI instala o `atualizar.ps1` em `C:\Program Files\AEGN` e regista a
+  tarefa `AEGN-Atualizar`, que corre como **SYSTEM** 5 minutos depois do
+  arranque e todos os dias entre as 13:00 e as 14:00 (o atraso aleatório evita
+  que uma sala inteira descarregue ao mesmo tempo);
+- se o último release tiver um MSI mais recente, descarrega-o, confirma o
+  SHA-256 com o `SHA256SUMS.txt` do release e instala-o com `msiexec /qn`;
+- a senha, a tarefa diária e as proteções mantêm-se na atualização.
+
+```powershell
+aegn atualizar             # compara a versão instalada com o último release
+aegn atualizar --aplicar   # atualiza já (qualquer utilizador, sem administrador)
+aegn atualizar estado      # estado da tarefa e registo
+```
+
+O registo fica em `C:\Program Files\AEGN\logs\atualizacao.log`. Para
+publicar uma versão nova basta subir a etiqueta `vX.Y.Z` (ver
+[Compilar](#compilar)): os computadores apanham-na na execução seguinte.
+
+> [!IMPORTANT]
+> - Os computadores descarregam sem credenciais, por isso **os releases têm de
+>   ser públicos** (repositório público). Num repositório privado a
+>   atualização falha e fica registada no log.
+> - Quem puder publicar releases neste repositório consegue executar código
+>   como SYSTEM em todos os computadores da escola: proteja a conta do GitHub
+>   com 2FA e limite quem tem acesso de escrita.
+> - A versão 0.2.0 não traz o atualizador: instale a 0.3.0 uma vez à mão com o
+>   `instalar.cmd`; a partir daí é automático.
+> - Para desativar num computador:
+>   `schtasks /Change /TN AEGN-Atualizar /Disable` (como administrador).
+
 ## Comandos
 
 Tudo o que altera o computador é **simulação** até se passar `--aplicar`.
@@ -73,6 +110,7 @@ Tudo o que altera o computador é **simulação** até se passar `--aplicar`.
 | `aegn firewall estado` / `impor` / `reverter` | Bloqueio de saída do RustDesk, AnyDesk e TeamViewer. |
 | `aegn tarefa instalar [--so-auditoria]` / `estado` / `remover` | Tarefa SYSTEM que volta a aplicar o processo no arranque e todos os dias. |
 | `aegn senha alterar` / `estado` / `verificar` | Senha de administração do AEGN. |
+| `aegn atualizar [--aplicar]` / `atualizar estado` | Procura e instala versões novas do GitHub (sem administrador nem senha). |
 
 Os nomes da versão 0.1 (`run`, `status`, `policy enforce`, `--apply`…)
 continuam a funcionar.
@@ -113,6 +151,8 @@ continuam a funcionar.
 ## Segurança e desenho
 
 - **Simulação por defeito**: nada muda no computador sem `--aplicar` e a senha.
+  Exceção: `aegn atualizar --aplicar` não pede a senha, porque só instala o
+  release oficial, e fá-lo pela tarefa SYSTEM.
 - **Reversível**: o AppLocker e o firewall só tocam nas regras próprias
   (`AEGN-Deny-UserFolders`, grupo `AEGN-RemoteAccess`); o resto da política
   local mantém-se. `aegn reverter --aplicar` desfaz tudo.
@@ -130,7 +170,7 @@ Em Windows, à mão:
 ```powershell
 cargo build --release
 dotnet tool install --global wix --version 5.0.2
-wix build installer\aegn.wxs -arch x64 -d Version=0.2.0 -d ExePath=target\release\aegn.exe -o AEGN-Security-0.2.0-x64.msi
+wix build installer\aegn.wxs -arch x64 -d Version=0.3.0 -d ExePath=target\release\aegn.exe -o AEGN-Security-0.3.0-x64.msi
 ```
 
 Em Linux pode verificar-se que o código de Windows compila (sem ligar):

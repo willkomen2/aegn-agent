@@ -13,7 +13,7 @@ estándar, con mecanismos nativos y auditables de Windows. **No hay dimensión
 ofensiva de ciberseguridad**: nada de sigilo, exfiltración ni evasión; todo es
 transparente y reversible.
 
-## Estado actual (v0.2.0)
+## Estado actual (v0.3.0)
 
 ```
 src/
@@ -25,8 +25,9 @@ src/
   policy.rs    AppLocker Exe/Script/Msi, modo auditoría, eventos, revert
   firewall.rs  Bloqueo saliente de RustDesk/AnyDesk/TeamViewer
   schedule.rs  Tarea SYSTEM diaria (solo si aegn.exe está en Program Files)
+  update.rs    `aegn atualizar`: consulta el último release y lanza la tarea AEGN-Atualizar
   ps.rs        Ejecuta PowerShell (solo Windows)
-installer/     MSI (WiX 5), instalar.ps1/.cmd, desinstalar.cmd, notas del release
+installer/     MSI (WiX 5), instalar.ps1/.cmd, desinstalar.cmd, atualizar.ps1, notas del release
 .github/workflows/release.yml   Compila en Windows y publica el release al subir vX.Y.Z
 ```
 
@@ -49,6 +50,9 @@ admin; el workflow solo compila y ejecuta los tests en Windows.
 | Contraseña | Hash PBKDF2 en HKLM | Solo admins escriben; protege de uso casual, no de un admin decidido. |
 | Instalación | MSI en `C:\Program Files\AEGN` + PATH del sistema | La tarea SYSTEM exige una ruta no escribible por usuarios. |
 | Compilación | GitHub Actions `windows-latest` | En Linux no hay linker de Windows. |
+| Actualización | Tarea SYSTEM `AEGN-Atualizar` que ejecuta `atualizar.ps1` (no `aegn.exe`) | Sin UAC ni contraseña; el MSI puede sustituir `aegn.exe` porque no está en uso. |
+| Versión publicada | `releases/latest/download/SHA256SUMS.txt` | No gasta el límite de 60 peticiones/hora de la API por IP (una sala comparte IP). |
+| Contraseña al actualizar | Se borra con un custom action solo si `NOT UPGRADINGPRODUCTCODE` | `RemoveRegistryKey` también corría al desinstalar el MSI viejo en la actualización mayor. |
 
 ## Pendiente (orden sugerido)
 
@@ -57,6 +61,10 @@ admin; el workflow solo compila y ejecuta los tests en Windows.
 2. **Lista de software no autorizado configurable** (`aegn.toml`).
 3. **Fallback SRP** para Windows Home (sin AppLocker).
 4. **Informe por ejecución** en disco.
+5. **Firmar el MSI** (Authenticode) y comprobar la firma en `atualizar.ps1`:
+   hoy el SHA-256 sale del mismo release, así que solo detecta descargas
+   corruptas; la autenticidad depende de HTTPS y de la cuenta de GitHub.
+6. Los releases tienen que ser **públicos**: los equipos descargan sin token.
 
 ## Avisos para el despliegue (no técnico)
 
