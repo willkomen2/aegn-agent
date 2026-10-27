@@ -17,6 +17,7 @@ mod audit;
 mod auth;
 mod browser;
 mod firewall;
+mod install;
 mod junk;
 mod policy;
 mod process;
@@ -124,6 +125,14 @@ enum Command {
     Reverter {
         #[arg(long, alias = "apply")]
         aplicar: bool,
+    },
+
+    /// Instala um programa (.exe ou .msi) bloqueado pelo AppLocker. Pede a
+    /// senha do AEGN e depois o Windows pede uma conta de administrador.
+    #[command(alias = "install")]
+    Instalar {
+        /// Instalador a executar.
+        ficheiro: std::path::PathBuf,
     },
 
     /// Senha de administração do agente (por defeito: admin).
@@ -326,6 +335,7 @@ impl Command {
                 action:
                     ScheduleAction::Instalar { aplicar, .. } | ScheduleAction::Remover { aplicar },
             } => *aplicar,
+            Command::Instalar { .. } => true,
             _ => false,
         }
     }
@@ -439,6 +449,7 @@ fn main() -> Result<()> {
         },
         Some(Command::Estado) => process::status_all()?,
         Some(Command::Reverter { aplicar }) => process::revert_all(aplicar)?,
+        Some(Command::Instalar { ficheiro }) => install::run(&ficheiro)?,
         Some(Command::Senha { action }) => match action {
             SenhaAction::Alterar => auth::change()?,
             SenhaAction::Estado => auth::status()?,

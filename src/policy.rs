@@ -113,6 +113,36 @@ const RULES: &[Rule] = &[
     ("Msi", "MSI dos Administradores", ADMINS, Cond::Path("*")),
 ];
 
+/// Marca donde `enforce` mete una regla "*" por cada cuenta del grupo
+/// Administradores. Con UAC, un administrador sin elevar lleva ese grupo como
+/// "solo denegar" y AppLocker no le aplica el Allow del grupo; su propio SID
+/// si cuenta, asi que tampoco queda bloqueado sin elevar.
+const ADMIN_ACCOUNTS: &str = "    <!-- AEGN: contas de administrador -->\n";
+
+/// PowerShell que sustituye ADMIN_ACCOUNTS en `$xml` por las reglas de las
+/// cuentas (locales, de dominio o de Entra ID) del grupo Administradores.
+#[cfg(windows)]
+fn admin_accounts_script() -> String {
+    format!(
+        r#"$contas = @()
+try {{
+  $g = Get-CimInstance Win32_Group -Filter "SID='{ADMINS}'"
+  $contas = @(Get-CimAssociatedInstance -InputObject $g -Association Win32_GroupUser |
+    Where-Object {{ $_.SID -match '^S-1-(5-21|12-1)-' }})
+}} catch {{ Write-Output "[aviso] Não foi possível ler os membros de Administradores: $_" }}
+$marca = '{mark}'
+while (($i = $xml.IndexOf($marca)) -ge 0) {{
+  $regras = foreach ($c in $contas) {{
+    $nome = [Security.SecurityElement]::Escape("{RULE_TAG}: Administrador $($c.Domain)\$($c.Name)")
+    "    <FilePathRule Id=""$([guid]::NewGuid())"" Name=""$nome"" Description=""AEGN Security - Escola AEGN"" UserOrGroupSid=""$($c.SID)"" Action=""Allow""><Conditions><FilePathCondition Path=""*"" /></Conditions></FilePathRule>`n"
+  }}
+  $xml = $xml.Remove($i, $marca.Length).Insert($i, (-join $regras))
+}}
+Write-Output ("Contas de administrador sem bloqueio: " + (($contas | ForEach-Object {{ $_.Name }}) -join ', '))"#,
+        mark = ADMIN_ACCOUNTS.trim_end_matches('\n'),
+    )
+}
+
 /// Politica AppLocker en XML. `audit_only` la deja en modo AuditOnly.
 fn applocker_policy_xml(audit_only: bool) -> String {
     let mode = if audit_only { "AuditOnly" } else { "Enabled" };
@@ -141,6 +171,7 @@ fn applocker_policy_xml(audit_only: bool) -> String {
                 i + 1
             ));
         }
+        xml.push_str(ADMIN_ACCOUNTS);
         xml.push_str("  </RuleCollection>\n");
     }
     xml.push_str("</AppLockerPolicy>");
@@ -199,6 +230,7 @@ $ErrorActionPreference = 'Stop'
 $xml = @'
 {xml}
 '@
+{admins}
 $tmp = Join-Path $env:TEMP 'aegn-applocker.xml'
 Set-Content -Path $tmp -Value $xml -Encoding UTF8
 Set-AppLockerPolicy -XmlPolicy $tmp -Merge
@@ -207,6 +239,7 @@ Write-Output "Política AEGN aplicada e fundida com a existente."
 {service}
 "#,
             strip = strip_script(),
+            admins = admin_accounts_script(),
             service = SERVICE_PS,
         );
         print!("{}", crate::ps::run(&ps)?);
@@ -407,6 +440,14 @@ mod tests {
                 "admins sin \"*\" en {c}"
             );
         }
+    }
+
+    #[test]
+    fn hueco_para_las_cuentas_admin_en_cada_coleccion() {
+        let xml = applocker_policy_xml(false);
+        assert_eq!(xml.matches(ADMIN_ACCOUNTS).count(), 3);
+        // Comentario XML valido: sin "--" dentro.
+        assert!(!ADMIN_ACCOUNTS.trim()[4..ADMIN_ACCOUNTS.trim().len() - 3].contains("--"));
     }
 
     #[test]

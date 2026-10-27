@@ -207,7 +207,10 @@ aegn auditoria historico              # o que foi desinstalado e quando
   ou `%PROGRAMFILES%` (MSI: `%WINDIR%\Installer`); os administradores podem
   tudo. Ficam assim bloqueados `.exe`, `.ps1/.bat/.cmd/.vbs/.js` e `.msi`
   vindos de Transferências, Ambiente de Trabalho, AppData, Documentos ou uma
-  pen USB. Os administradores **nunca** são bloqueados. Também se permite,
+  pen USB. Os administradores **nunca** são bloqueados, nem sem elevar (cada
+  conta do grupo Administradores tem a sua regra). Para instalar algo numa
+  conta de aluno: `aegn instalar <ficheiro.exe|.msi>`, que pede a senha do
+  AEGN e depois o Windows pede uma conta de administrador. Também se permite,
   esteja onde estiver, o que vem assinado pela Microsoft (OneDrive, Teams,
   componentes do Windows que arrancam ao iniciar sessão), pela Google (Chrome)
   e pela Mozilla (Firefox), mesmo instalados só para o utilizador.
@@ -247,7 +250,7 @@ Em Windows, à mão:
 ```powershell
 cargo build --release
 dotnet tool install --global wix --version 5.0.2
-wix build installer\aegn.wxs -arch x64 -d Version=0.5.2 -d ExePath=target\release\aegn.exe -o AEGN-Security-0.5.2-x64.msi
+wix build installer\aegn.wxs -arch x64 -d Version=0.6.0 -d ExePath=target\release\aegn.exe -o AEGN-Security-0.6.0-x64.msi
 ```
 
 Em Linux pode verificar-se que o código de Windows compila (sem ligar):

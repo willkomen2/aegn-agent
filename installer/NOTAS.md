@@ -14,6 +14,13 @@ caso a senha fica `admin` até a alterar com `aegn senha alterar`.
 
 ### Novidades
 
+- **Instalar programas com a senha do AEGN** (0.6.0): `aegn instalar
+  <ficheiro.exe|.msi>` pede a senha do AEGN (por defeito `admin`) e abre o
+  instalador elevado; o Windows pede então uma conta de administrador. Serve
+  para instalar a partir de Transferências ou de uma pen USB numa conta de
+  aluno. Os administradores também deixam de ser bloqueados sem elevar: cada
+  conta do grupo Administradores tem a sua própria regra.
+
 - **AppLocker já não bloqueia o Windows nem os administradores** (0.5.2): saem
   as regras Deny de AppData\Local e Transferências, que se aplicavam também aos
   administradores e impediam o arranque do ambiente de trabalho ao iniciar
