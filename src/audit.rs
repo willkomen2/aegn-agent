@@ -34,8 +34,8 @@ Get-ItemProperty $paths -ErrorAction SilentlyContinue |
 
     #[cfg(not(windows))]
     {
-        println!("[info] El inventario de software solo esta disponible en Windows.");
-        println!("[info] En el endpoint ejecutaria: Get-ItemProperty sobre las claves Uninstall del registro.");
+        println!("[info] O inventário de software só está disponível no Windows.");
+        println!("[info] No computador executaria: Get-ItemProperty sobre as chaves Uninstall do registo.");
         Ok(())
     }
 }
@@ -58,9 +58,9 @@ $members = try {
   ([ADSI]"WinNT://./$g,group").Invoke('Members') |
     ForEach-Object { $_.GetType().InvokeMember('AdsPath', 'GetProperty', $null, $_, $null) }
 }
-Write-Output "--- Administradores locales ---"
+Write-Output "--- Administradores locais ---"
 $members | ForEach-Object { "  " + $_ }
-Write-Output "[nota] Ningun alumno debe estar en este grupo: un administrador puede saltarse AppLocker y el firewall."
+Write-Output "[nota] Nenhum aluno deve estar neste grupo: um administrador consegue contornar o AppLocker e o firewall."
 "#;
         print!("{}", crate::ps::run(ps)?);
         Ok(())
@@ -68,7 +68,7 @@ Write-Output "[nota] Ningun alumno debe estar en este grupo: un administrador pu
 
     #[cfg(not(windows))]
     {
-        println!("[info] La lista de administradores locales solo esta disponible en Windows.");
+        println!("[info] A lista de administradores locais só está disponível no Windows.");
         Ok(())
     }
 }
@@ -81,13 +81,13 @@ pub fn remove(name: &str, apply: bool) -> Result<()> {
     #[cfg(windows)]
     {
         if !apply {
-            println!("[dry-run] Buscando software que coincida con: '{name}'");
+            println!("[simulação] A procurar software que corresponda a: '{name}'");
             print!("{}", crate::ps::run(&uninstall_script(name, false))?);
-            println!("[dry-run] Ejecuta con --apply para desinstalar de verdad (requiere admin).");
+            println!("[simulação] Execute com --aplicar para desinstalar de facto (requer administrador).");
             return Ok(());
         }
 
-        println!("[accion] Intentando desinstalar '{name}' via winget...");
+        println!("[ação] A tentar desinstalar '{name}' através do winget...");
         // winget maneja la mayoria del software moderno de forma silenciosa.
         let winget = std::process::Command::new("winget")
             .args([
@@ -102,11 +102,11 @@ pub fn remove(name: &str, apply: bool) -> Result<()> {
 
         match winget {
             Ok(status) if status.success() => {
-                println!("[ok] '{name}' desinstalado via winget.");
+                println!("[ok] '{name}' desinstalado através do winget.");
                 return Ok(());
             }
             _ => {
-                println!("[info] winget no completo la operacion; probando UninstallString del registro.");
+                println!("[info] O winget não concluiu a operação; a tentar a UninstallString do registo.");
             }
         }
 
@@ -118,10 +118,10 @@ pub fn remove(name: &str, apply: bool) -> Result<()> {
     #[cfg(not(windows))]
     {
         if !apply {
-            println!("[dry-run] Se desinstalaria el software que coincida con: '{name}'");
-            println!("[dry-run] Ejecuta con --apply para desinstalar de verdad (requiere admin).");
+            println!("[simulação] Seria desinstalado o software que corresponda a: '{name}'");
+            println!("[simulação] Execute com --aplicar para desinstalar de facto (requer administrador).");
         } else {
-            println!("[info] La desinstalacion solo esta disponible en Windows ('{name}').");
+            println!("[info] A desinstalação só está disponível no Windows ('{name}').");
         }
         Ok(())
     }
@@ -143,13 +143,13 @@ $paths = @(
 )
 $apps = @(Get-ItemProperty $paths -ErrorAction SilentlyContinue |
   Where-Object {{ $_.DisplayName -like "*$name*" }})
-if ($apps.Count -eq 0) {{ Write-Output "NOT_FOUND: ningun programa coincide con '$name'."; exit 0 }}
+if ($apps.Count -eq 0) {{ Write-Output "NAO_ENCONTRADO: nenhum programa corresponde a '$name'."; exit 0 }}
 $failed = $false
 foreach ($app in $apps) {{
-  Write-Output ("TARGET=" + $app.DisplayName + " " + $app.DisplayVersion)
+  Write-Output ("ALVO=" + $app.DisplayName + " " + $app.DisplayVersion)
   $cmd = $app.QuietUninstallString
   if (-not $cmd) {{ $cmd = $app.UninstallString }}
-  if (-not $cmd) {{ Write-Output '  NO_UNINSTALL_STRING'; $failed = $true; continue }}
+  if (-not $cmd) {{ Write-Output '  SEM_UNINSTALL_STRING'; $failed = $true; continue }}
   # MSI registra "MsiExec.exe /I{{GUID}}", que abre el asistente de modificacion:
   # se cambia por /x silencioso.
   if ($cmd -match 'msiexec' -and $cmd -match '(\{{[0-9A-Fa-f-]{{36}}\}})') {{
@@ -161,7 +161,7 @@ foreach ($app in $apps) {{
   Write-Output ("  CMD=" + $exe + " " + $argList)
   if (-not $apply) {{ continue }}
   $p = Start-Process -FilePath $exe -ArgumentList $argList -Wait -PassThru -NoNewWindow
-  Write-Output ("  EXIT=" + $p.ExitCode)
+  Write-Output ("  SAIDA=" + $p.ExitCode)
   # 1605 = ya no estaba instalado, 3010 = OK pendiente de reinicio.
   if ($p.ExitCode -notin 0, 1605, 3010) {{ $failed = $true }}
 }}

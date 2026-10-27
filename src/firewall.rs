@@ -28,13 +28,13 @@ pub fn status() -> Result<()> {
         let ps = format!(
             r#"
 Get-NetFirewallProfile | ForEach-Object {{
-  $state = if ($_.Enabled) {{ 'activo' }} else {{ 'DESACTIVADO' }}
+  $state = if ($_.Enabled) {{ 'ativo' }} else {{ 'DESATIVADO' }}
   Write-Output ("Perfil " + $_.Name + ": " + $state)
-  if (-not $_.Enabled) {{ Write-Output "[aviso] Con el perfil $($_.Name) desactivado las reglas AEGN no actuan." }}
+  if (-not $_.Enabled) {{ Write-Output "[aviso] Com o perfil $($_.Name) desativado, as regras AEGN não atuam." }}
 }}
-Write-Output "--- Reglas {GROUP} ---"
+Write-Output "--- Regras {GROUP} ---"
 $rules = @(Get-NetFirewallRule -Group '{GROUP}' -ErrorAction SilentlyContinue)
-if ($rules.Count -eq 0) {{ Write-Output '  (ninguna)' }}
+if ($rules.Count -eq 0) {{ Write-Output '  (nenhuma)' }}
 $rules | ForEach-Object {{ "  " + $_.DisplayName + "  [" + $_.Enabled + "]" }}
 "#
         );
@@ -44,7 +44,7 @@ $rules | ForEach-Object {{ "  " + $_.DisplayName + "  [" + $_.Enabled + "]" }}
 
     #[cfg(not(windows))]
     {
-        println!("[info] El estado del firewall solo esta disponible en Windows.");
+        println!("[info] O estado do firewall só está disponível no Windows.");
         Ok(())
     }
 }
@@ -52,11 +52,11 @@ $rules | ForEach-Object {{ "  " + $_.DisplayName + "  [" + $_.Enabled + "]" }}
 /// Crea (o recrea) las reglas de bloqueo saliente. Dry-run salvo `apply`.
 pub fn enforce(apply: bool) -> Result<()> {
     if !apply {
-        println!("[dry-run] Se bloquearia la salida en el Firewall de Windows (grupo {GROUP}):");
+        println!("[simulação] Seria bloqueada a saída na Firewall do Windows (grupo {GROUP}):");
         for (tool, proto, ports) in BLOCKS {
-            println!("[dry-run]   {tool:<10} {proto} {ports}");
+            println!("[simulação]   {tool:<10} {proto} {ports}");
         }
-        println!("[dry-run] Ejecuta con --apply para crear las reglas (requiere admin).");
+        println!("[simulação] Execute com --aplicar para criar as regras (requer administrador).");
         return Ok(());
     }
 
@@ -73,9 +73,9 @@ pub fn enforce(apply: bool) -> Result<()> {
             ));
         }
         ps.push_str(&format!(
-            "Write-Output \"Creadas {} reglas de bloqueo saliente ({GROUP}).\"\n\
+            "Write-Output \"Criadas {} regras de bloqueio de saída ({GROUP}).\"\n\
              if (Get-NetFirewallProfile | Where-Object {{ -not $_.Enabled }}) {{ \
-             Write-Output '[aviso] Hay perfiles del firewall desactivados: las reglas no actuan en ellos.' }}\n",
+             Write-Output '[aviso] Há perfis do firewall desativados: as regras não atuam neles.' }}\n",
             BLOCKS.len()
         ));
         print!("{}", crate::ps::run(&ps)?);
@@ -84,7 +84,7 @@ pub fn enforce(apply: bool) -> Result<()> {
 
     #[cfg(not(windows))]
     {
-        println!("[info] El firewall solo esta disponible en Windows.");
+        println!("[info] O firewall só está disponível no Windows.");
         Ok(())
     }
 }
@@ -92,7 +92,7 @@ pub fn enforce(apply: bool) -> Result<()> {
 /// Retira las reglas del grupo AEGN. Dry-run salvo `apply`.
 pub fn revert(apply: bool) -> Result<()> {
     if !apply {
-        println!("[dry-run] Se eliminarian las reglas de firewall del grupo {GROUP}.");
+        println!("[simulação] Seriam eliminadas as regras de firewall do grupo {GROUP}.");
         return Ok(());
     }
 
@@ -101,7 +101,7 @@ pub fn revert(apply: bool) -> Result<()> {
         let ps = format!(
             "$r = @(Get-NetFirewallRule -Group '{GROUP}' -ErrorAction SilentlyContinue)\n\
              $r | Remove-NetFirewallRule\n\
-             Write-Output (\"Eliminadas \" + $r.Count + \" reglas de firewall AEGN.\")"
+             Write-Output (\"Eliminadas \" + $r.Count + \" regras de firewall AEGN.\")"
         );
         print!("{}", crate::ps::run(&ps)?);
         Ok(())
@@ -109,7 +109,7 @@ pub fn revert(apply: bool) -> Result<()> {
 
     #[cfg(not(windows))]
     {
-        println!("[info] El firewall solo esta disponible en Windows.");
+        println!("[info] O firewall só está disponível no Windows.");
         Ok(())
     }
 }

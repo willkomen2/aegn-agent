@@ -14,7 +14,7 @@
 //! cualquier ruta a los administradores; lo demas queda bloqueado por defecto.
 //! AppData\Local y Downloads llevan ademas un Deny explicito en Exe.
 //!
-//! Modo auditoria: `AuditOnly` no bloquea nada, solo registra en el visor de
+//! Modo auditoria (`--so-auditoria`): `AuditOnly` no bloquea nada, solo registra en el visor de
 //! eventos lo que se habria bloqueado (ver `events`). Es el paso previo
 //! recomendado antes de activar el bloqueo en un aula.
 
@@ -28,22 +28,70 @@ const EVERYONE: &str = "S-1-1-0";
 const ADMINS: &str = "S-1-5-32-544";
 
 /// Una regla de ruta: (coleccion, nombre, sid, accion, ruta).
-type Rule = (&'static str, &'static str, &'static str, &'static str, &'static str);
+type Rule = (
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+);
 
 /// Reglas del agente. Las de Allow son las reglas por defecto de AppLocker:
 /// con una coleccion activa, lo que no case con ningun Allow queda bloqueado.
 /// Los Deny tienen prioridad sobre los Allow y aplican tambien a los admins.
 const RULES: &[Rule] = &[
-    ("Exe", "AppData Local", EVERYONE, "Deny", r"%OSDRIVE%\Users\*\AppData\Local\*"),
-    ("Exe", "Downloads", EVERYONE, "Deny", r"%OSDRIVE%\Users\*\Downloads\*"),
-    ("Exe", "Permitir Program Files", EVERYONE, "Allow", r"%PROGRAMFILES%\*"),
+    (
+        "Exe",
+        "AppData Local",
+        EVERYONE,
+        "Deny",
+        r"%OSDRIVE%\Users\*\AppData\Local\*",
+    ),
+    (
+        "Exe",
+        "Transferências",
+        EVERYONE,
+        "Deny",
+        r"%OSDRIVE%\Users\*\Downloads\*",
+    ),
+    (
+        "Exe",
+        "Permitir Program Files",
+        EVERYONE,
+        "Allow",
+        r"%PROGRAMFILES%\*",
+    ),
     ("Exe", "Permitir Windows", EVERYONE, "Allow", r"%WINDIR%\*"),
     ("Exe", "Permitir Administradores", ADMINS, "Allow", "*"),
-    ("Script", "Scripts en Program Files", EVERYONE, "Allow", r"%PROGRAMFILES%\*"),
-    ("Script", "Scripts en Windows", EVERYONE, "Allow", r"%WINDIR%\*"),
-    ("Script", "Scripts de Administradores", ADMINS, "Allow", "*"),
-    ("Msi", "Instaladores de Windows", EVERYONE, "Allow", r"%WINDIR%\Installer\*"),
-    ("Msi", "MSI de Administradores", ADMINS, "Allow", "*"),
+    (
+        "Script",
+        "Scripts em Program Files",
+        EVERYONE,
+        "Allow",
+        r"%PROGRAMFILES%\*",
+    ),
+    (
+        "Script",
+        "Scripts do Windows",
+        EVERYONE,
+        "Allow",
+        r"%WINDIR%\*",
+    ),
+    (
+        "Script",
+        "Scripts dos Administradores",
+        ADMINS,
+        "Allow",
+        "*",
+    ),
+    (
+        "Msi",
+        "Instaladores do Windows",
+        EVERYONE,
+        "Allow",
+        r"%WINDIR%\Installer\*",
+    ),
+    ("Msi", "MSI dos Administradores", ADMINS, "Allow", "*"),
 ];
 
 /// Politica AppLocker en XML. `audit_only` la deja en modo AuditOnly.
@@ -54,14 +102,12 @@ fn applocker_policy_xml(audit_only: bool) -> String {
         xml.push_str(&format!(
             "  <RuleCollection Type=\"{collection}\" EnforcementMode=\"{mode}\">\n"
         ));
-        for (i, (_, name, sid, action, path)) in RULES
-            .iter()
-            .enumerate()
-            .filter(|(_, r)| r.0 == collection)
+        for (i, (_, name, sid, action, path)) in
+            RULES.iter().enumerate().filter(|(_, r)| r.0 == collection)
         {
             xml.push_str(&format!(
                 "    <FilePathRule Id=\"ae6e0000-0000-4000-8000-0000000000{:02x}\" Name=\"{RULE_TAG}: {name}\" \
-                 Description=\"Escola AEGN\" UserOrGroupSid=\"{sid}\" Action=\"{action}\">\n\
+                 Description=\"AEGN Security - Escola AEGN\" UserOrGroupSid=\"{sid}\" Action=\"{action}\">\n\
                  \x20     <Conditions><FilePathCondition Path=\"{path}\" /></Conditions>\n\
                  \x20   </FilePathRule>\n",
                 i + 1
@@ -79,8 +125,8 @@ pub fn status() -> Result<()> {
     {
         let ps = r#"
 $svc = Get-Service AppIDSvc -ErrorAction SilentlyContinue
-if ($svc) { Write-Output ("Servicio AppIDSvc (AppLocker): " + $svc.Status) }
-else { Write-Output "Servicio AppIDSvc no encontrado." }
+if ($svc) { Write-Output ("Serviço AppIDSvc (AppLocker): " + $svc.Status) }
+else { Write-Output "Serviço AppIDSvc não encontrado." }
 foreach ($c in (Get-AppLockerPolicy -Effective).RuleCollections) {
   Write-Output ("--- " + $c.RuleCollectionType + ": " + $c.EnforcementMode + " ---")
   $c | ForEach-Object { "  " + $_.Action + "  " + $_.Name + "  " + ($_.PathConditions -join ', ') }
@@ -92,8 +138,8 @@ foreach ($c in (Get-AppLockerPolicy -Effective).RuleCollections) {
 
     #[cfg(not(windows))]
     {
-        println!("[info] El estado de politicas solo esta disponible en Windows.");
-        println!("[info] Consultaria Get-AppLockerPolicy -Effective y el servicio AppIDSvc.");
+        println!("[info] O estado das políticas só está disponível no Windows.");
+        println!("[info] Consultaria Get-AppLockerPolicy -Effective e o serviço AppIDSvc.");
         Ok(())
     }
 }
@@ -103,14 +149,14 @@ foreach ($c in (Get-AppLockerPolicy -Effective).RuleCollections) {
 pub fn enforce(apply: bool, audit_only: bool) -> Result<()> {
     let xml = applocker_policy_xml(audit_only);
     if audit_only {
-        println!("[nota] Modo auditoria: no se bloquea nada, solo se registran eventos (aegn policy events).");
+        println!("[nota] Modo auditoria: nada é bloqueado, apenas se registam eventos (aegn politica eventos).");
     }
 
     if !apply {
-        println!("[dry-run] Se aplicaria la siguiente politica AppLocker:\n");
+        println!("[simulação] Seria aplicada a seguinte política AppLocker:\n");
         println!("{xml}");
-        println!("\n[dry-run] Ejecuta con --apply para aplicarla (requiere admin).");
-        println!("[nota] El servicio Application Identity (AppIDSvc) debe estar en ejecucion.");
+        println!("\n[simulação] Execute com --aplicar para a aplicar (requer administrador).");
+        println!("[nota] O serviço Application Identity (AppIDSvc) tem de estar em execução.");
         return Ok(());
     }
 
@@ -129,7 +175,7 @@ $tmp = Join-Path $env:TEMP 'aegn-applocker.xml'
 Set-Content -Path $tmp -Value $xml -Encoding UTF8
 Set-AppLockerPolicy -XmlPolicy $tmp -Merge
 Remove-Item $tmp -Force
-Write-Output "Politica AEGN aplicada y fusionada con la existente."
+Write-Output "Política AEGN aplicada e fundida com a existente."
 {service}
 "#,
             strip = strip_script(),
@@ -141,7 +187,7 @@ Write-Output "Politica AEGN aplicada y fusionada con la existente."
 
     #[cfg(not(windows))]
     {
-        println!("[info] La aplicacion de politicas solo esta disponible en Windows.");
+        println!("[info] A aplicação de políticas só está disponível no Windows.");
         Ok(())
     }
 }
@@ -149,15 +195,17 @@ Write-Output "Politica AEGN aplicada y fusionada con la existente."
 /// Revierte las reglas aplicadas por el agente (identificadas por RULE_TAG).
 pub fn revert(apply: bool) -> Result<()> {
     if !apply {
-        println!("[dry-run] Se eliminarian las reglas AppLocker con etiqueta '{RULE_TAG}'.");
-        println!("[dry-run] Ejecuta con --apply para revertir de verdad (requiere admin).");
+        println!("[simulação] Seriam eliminadas as regras AppLocker com a etiqueta '{RULE_TAG}'.");
+        println!(
+            "[simulação] Execute com --aplicar para reverter de facto (requer administrador)."
+        );
         return Ok(());
     }
 
     #[cfg(windows)]
     {
         let ps = format!(
-            "$ErrorActionPreference = 'Stop'\n{}\nWrite-Output \"Reglas AEGN retiradas; el resto de la politica local se conserva.\"",
+            "$ErrorActionPreference = 'Stop'\n{}\nWrite-Output \"Regras AEGN retiradas; o resto da política local mantém-se.\"",
             strip_script()
         );
         print!("{}", crate::ps::run(&ps)?);
@@ -167,7 +215,7 @@ pub fn revert(apply: bool) -> Result<()> {
     #[cfg(not(windows))]
     {
         let _ = apply;
-        println!("[info] La reversion de politicas solo esta disponible en Windows.");
+        println!("[info] A reversão das políticas só está disponível no Windows.");
         Ok(())
     }
 }
@@ -181,7 +229,7 @@ pub fn events(max: u32) -> Result<()> {
             r#"
 $logs = 'Microsoft-Windows-AppLocker/EXE and DLL', 'Microsoft-Windows-AppLocker/MSI and Script'
 $ev = Get-WinEvent -FilterHashtable @{{ LogName = $logs; Id = 8003, 8004, 8006, 8007, 8021, 8022 }} -MaxEvents {max} -ErrorAction SilentlyContinue
-if (-not $ev) {{ Write-Output 'Sin eventos de AppLocker registrados.'; exit 0 }}
+if (-not $ev) {{ Write-Output 'Sem eventos do AppLocker registados.'; exit 0 }}
 foreach ($e in $ev) {{
   $kind = if ($e.Id -in 8003, 8006, 8021) {{ 'AUDIT' }} else {{ 'BLOQ ' }}
   $user = try {{ $e.UserId.Translate([Security.Principal.NTAccount]).Value }} catch {{ "$($e.UserId)" }}
@@ -196,8 +244,10 @@ foreach ($e in $ev) {{
 
     #[cfg(not(windows))]
     {
-        println!("[info] Los eventos de AppLocker solo estan disponibles en Windows.");
-        println!("[info] Leeria los ultimos {max} eventos 8003/8004/8006/8007 del visor de eventos.");
+        println!("[info] Os eventos do AppLocker só estão disponíveis no Windows.");
+        println!(
+            "[info] Leria os últimos {max} eventos 8003/8004/8006/8007 do Visualizador de Eventos."
+        );
         Ok(())
     }
 }
@@ -219,7 +269,7 @@ if ($ours.Count -gt 0) {{
   $local.Save($stripped)
   Set-AppLockerPolicy -XmlPolicy $stripped
   Remove-Item $stripped -Force
-  Write-Output ("Retiradas " + $ours.Count + " reglas AEGN previas.")
+  Write-Output ("Retiradas " + $ours.Count + " regras AEGN anteriores.")
 }}"#
     )
 }
@@ -231,9 +281,9 @@ if ($ours.Count -gt 0) {{
 #[cfg(windows)]
 const SERVICE_PS: &str = r#"$ErrorActionPreference = 'Continue'
 & sc.exe config AppIDSvc start= auto | Out-Null
-if ($LASTEXITCODE -ne 0) { Write-Output "[aviso] sc.exe no pudo poner AppIDSvc en automatico (codigo $LASTEXITCODE); configuralo por GPO." }
+if ($LASTEXITCODE -ne 0) { Write-Output "[aviso] O sc.exe não conseguiu pôr o AppIDSvc em automático (código $LASTEXITCODE); configure-o por GPO." }
 Start-Service -Name AppIDSvc -ErrorAction SilentlyContinue
-Write-Output ("Servicio AppIDSvc: " + (Get-Service AppIDSvc).Status)
+Write-Output ("Serviço AppIDSvc: " + (Get-Service AppIDSvc).Status)
 $global:LASTEXITCODE = 0"#;
 
 #[cfg(test)]
@@ -258,7 +308,10 @@ mod tests {
             let parts: Vec<&str> = id.split('-').collect();
             let lens: Vec<usize> = parts.iter().map(|p| p.len()).collect();
             assert_eq!(lens, [8, 4, 4, 4, 12], "Id mal formado: {id}");
-            assert!(id.chars().all(|c| c == '-' || c.is_ascii_hexdigit()), "Id no hex: {id}");
+            assert!(
+                id.chars().all(|c| c == '-' || c.is_ascii_hexdigit()),
+                "Id no hex: {id}"
+            );
         }
         let mut unique = ids.clone();
         unique.sort();
@@ -271,7 +324,10 @@ mod tests {
         // revert/enforce localizan las reglas propias por este prefijo.
         let xml = applocker_policy_xml(false);
         for rule in rules(&xml) {
-            assert!(attr(rule, "Name").starts_with(RULE_TAG), "regla sin etiqueta: {rule}");
+            assert!(
+                attr(rule, "Name").starts_with(RULE_TAG),
+                "regla sin etiqueta: {rule}"
+            );
         }
     }
 

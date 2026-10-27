@@ -1,12 +1,12 @@
 //! Orquestador del "proceso" de mantenimiento que ejecuta el agente.
 //!
 //! Reune en una sola rutina los pasos que el administrador quiere lanzar de
-//! golpe desde el menu (o desde `aegn run`): inventario, desinstalacion de
+//! golpe desde el menu (o desde `aegn executar`): inventario, desinstalacion de
 //! software no autorizado, politicas de ejecucion y firewall.
 //!
 //! Respeta el principio de dry-run: nada se aplica de verdad salvo `apply=true`.
 
-use crate::{audit, firewall, policy, schedule};
+use crate::{audit, auth, firewall, policy, schedule};
 use anyhow::Result;
 
 /// Configuracion de una ejecucion del proceso. La arma el menu (toggles) o la
@@ -41,50 +41,50 @@ impl Default for ProcessConfig {
 
 /// Ejecuta el proceso segun la configuracion dada.
 pub fn run(cfg: &ProcessConfig) -> Result<()> {
-    println!("================ Proceso AEGN ================");
+    println!("================ Processo AEGN Security ================");
     if cfg.apply {
-        println!("[MODO REAL] Se aplicaran cambios. Requiere consola de administrador.");
+        println!("[MODO REAL] Vão ser aplicadas alterações. Requer consola de administrador.");
     } else {
         println!(
-            "[DRY-RUN] Solo se muestra que se haria. Activa 'Aplicar de verdad' para ejecutar."
+            "[SIMULAÇÃO] Apenas se mostra o que seria feito. Ative 'Aplicar de facto' para executar."
         );
     }
     println!();
 
     if !cfg.simple {
-        println!("-- Inventario de software instalado --");
+        println!("-- Inventário do software instalado --");
         audit::list()?;
         println!();
-        println!("-- Administradores locales --");
+        println!("-- Administradores locais --");
         audit::admins()?;
         println!();
     }
 
     if cfg.uninstall_rustdesk {
-        println!("-- Desinstalar RustDesk --");
+        println!("-- Desinstalar o RustDesk --");
         audit::remove("RustDesk", cfg.apply)?;
         println!();
     }
 
     if cfg.uninstall_opencode {
-        println!("-- Desinstalar OpenCode --");
+        println!("-- Desinstalar o OpenCode --");
         audit::remove("OpenCode", cfg.apply)?;
         println!();
     }
 
     if cfg.apply_policies {
-        println!("-- Politicas de restriccion de ejecucion --");
+        println!("-- Políticas de restrição de execução --");
         policy::enforce(cfg.apply, cfg.audit_only)?;
         println!();
     }
 
     if cfg.firewall {
-        println!("-- Firewall: acceso remoto --");
+        println!("-- Firewall: acesso remoto --");
         firewall::enforce(cfg.apply)?;
         println!();
     }
 
-    println!("================ Proceso finalizado ================");
+    println!("================ Processo concluído ================");
     Ok(())
 }
 
@@ -96,8 +96,11 @@ pub fn status_all() -> Result<()> {
     println!("-- Firewall --");
     firewall::status()?;
     println!();
-    println!("-- Tarea programada --");
-    schedule::status()
+    println!("-- Tarefa agendada --");
+    schedule::status()?;
+    println!();
+    println!("-- Senha de administração --");
+    auth::status()
 }
 
 /// Deshace todo lo que aplica el agente: reglas AppLocker, reglas de firewall
@@ -109,11 +112,13 @@ pub fn revert_all(apply: bool) -> Result<()> {
     println!("-- Firewall --");
     firewall::revert(apply)?;
     println!();
-    println!("-- Tarea programada --");
+    println!("-- Tarefa agendada --");
     schedule::remove(apply)?;
     if !apply {
         println!();
-        println!("[dry-run] Ejecuta con --apply para revertir de verdad (requiere admin).");
+        println!(
+            "[simulação] Execute com --aplicar para reverter de facto (requer administrador)."
+        );
     }
     Ok(())
 }

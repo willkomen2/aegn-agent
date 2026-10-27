@@ -1,7 +1,7 @@
 //! Tarea programada que reaplica el proceso de forma periodica.
 //!
 //! Registra la tarea `AEGN-Agent`, que corre como SYSTEM al arrancar el equipo
-//! y cada dia a las 12:00 con `aegn run --apply --simple`, de modo que si
+//! y cada dia a las 12:00 con `aegn executar --aplicar --simples`, de modo que si
 //! alguien reinstala RustDesk o retira una regla, el equipo vuelve solo a su
 //! estado correcto. La salida se anade a `logs\aegn.log` junto al ejecutable.
 //!
@@ -15,9 +15,9 @@ const TASK: &str = "AEGN-Agent";
 
 /// Argumentos con los que la tarea ejecuta el agente.
 fn task_args(audit_only: bool) -> String {
-    let mut args = String::from("run --apply --simple");
+    let mut args = String::from("executar --aplicar --simples");
     if audit_only {
-        args.push_str(" --audit-only");
+        args.push_str(" --so-auditoria");
     }
     args
 }
@@ -26,10 +26,10 @@ fn task_args(audit_only: bool) -> String {
 pub fn install(apply: bool, audit_only: bool) -> Result<()> {
     let args = task_args(audit_only);
     if !apply {
-        println!("[dry-run] Se registraria la tarea '{TASK}' como SYSTEM (al arrancar y diaria a las 12:00):");
-        println!("[dry-run]   aegn {args}");
-        println!("[dry-run] Requisito: aegn.exe instalado dentro de Program Files.");
-        println!("[dry-run] Ejecuta con --apply para registrarla (requiere admin).");
+        println!("[simulação] Seria registada a tarefa '{TASK}' como SYSTEM (no arranque e diariamente às 12:00):");
+        println!("[simulação]   aegn {args}");
+        println!("[simulação] Requisito: aegn.exe instalado dentro de Program Files.");
+        println!("[simulação] Execute com --aplicar para a registar (requer administrador).");
         return Ok(());
     }
 
@@ -51,7 +51,7 @@ $triggers = @((New-ScheduledTaskTrigger -AtStartup), (New-ScheduledTaskTrigger -
 $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 1)
 Register-ScheduledTask -TaskName '{TASK}' -Action $action -Trigger $triggers -Principal $principal -Settings $settings -Force | Out-Null
-Write-Output "Tarea {TASK} registrada. Log: $log"
+Write-Output "Tarefa {TASK} registada. Registo: $log"
 "#,
             exe = q(&exe),
             log = q(&log),
@@ -62,7 +62,7 @@ Write-Output "Tarea {TASK} registrada. Log: $log"
 
     #[cfg(not(windows))]
     {
-        println!("[info] Las tareas programadas solo estan disponibles en Windows.");
+        println!("[info] As tarefas agendadas só estão disponíveis no Windows.");
         Ok(())
     }
 }
@@ -70,7 +70,7 @@ Write-Output "Tarea {TASK} registrada. Log: $log"
 /// Elimina la tarea. Dry-run salvo `apply`.
 pub fn remove(apply: bool) -> Result<()> {
     if !apply {
-        println!("[dry-run] Se eliminaria la tarea programada '{TASK}'.");
+        println!("[simulação] Seria eliminada a tarefa agendada '{TASK}'.");
         return Ok(());
     }
 
@@ -79,7 +79,7 @@ pub fn remove(apply: bool) -> Result<()> {
         let ps = format!(
             "if (Get-ScheduledTask -TaskName '{TASK}' -ErrorAction SilentlyContinue) {{\n\
              Unregister-ScheduledTask -TaskName '{TASK}' -Confirm:$false\n\
-             Write-Output 'Tarea {TASK} eliminada.' }} else {{ Write-Output 'La tarea {TASK} no existe.' }}"
+             Write-Output 'Tarefa {TASK} eliminada.' }} else {{ Write-Output 'A tarefa {TASK} não existe.' }}"
         );
         print!("{}", crate::ps::run(&ps)?);
         Ok(())
@@ -87,7 +87,7 @@ pub fn remove(apply: bool) -> Result<()> {
 
     #[cfg(not(windows))]
     {
-        println!("[info] Las tareas programadas solo estan disponibles en Windows.");
+        println!("[info] As tarefas agendadas só estão disponíveis no Windows.");
         Ok(())
     }
 }
@@ -104,13 +104,13 @@ pub fn status() -> Result<()> {
         let ps = format!(
             r#"
 $t = Get-ScheduledTask -TaskName '{TASK}' -ErrorAction SilentlyContinue
-if (-not $t) {{ Write-Output 'Tarea {TASK} no instalada.'; exit 0 }}
+if (-not $t) {{ Write-Output 'Tarefa {TASK} não instalada.'; exit 0 }}
 $i = $t | Get-ScheduledTaskInfo
-Write-Output ("Tarea {TASK}: " + $t.State)
-Write-Output ("  Ultima ejecucion: " + $i.LastRunTime + "  resultado: " + $i.LastTaskResult)
-Write-Output ("  Proxima: " + $i.NextRunTime)
-Write-Output ("  Accion: " + $t.Actions[0].Arguments)
-if (Test-Path '{log}') {{ Write-Output '--- Ultimas lineas del log ---'; Get-Content '{log}' -Tail 20 }}
+Write-Output ("Tarefa {TASK}: " + $t.State)
+Write-Output ("  Última execução: " + $i.LastRunTime + "  resultado: " + $i.LastTaskResult)
+Write-Output ("  Próxima: " + $i.NextRunTime)
+Write-Output ("  Ação: " + $t.Actions[0].Arguments)
+if (Test-Path '{log}') {{ Write-Output '--- Últimas linhas do registo ---'; Get-Content '{log}' -Tail 20 }}
 "#
         );
         print!("{}", crate::ps::run(&ps)?);
@@ -119,7 +119,7 @@ if (Test-Path '{log}') {{ Write-Output '--- Ultimas lineas del log ---'; Get-Con
 
     #[cfg(not(windows))]
     {
-        println!("[info] Las tareas programadas solo estan disponibles en Windows.");
+        println!("[info] As tarefas agendadas só estão disponíveis no Windows.");
         Ok(())
     }
 }
@@ -137,9 +137,9 @@ fn protected_exe() -> Result<std::path::PathBuf> {
         .collect();
     if !roots.iter().any(|r| plain.to_lowercase().starts_with(r)) {
         anyhow::bail!(
-            "aegn.exe esta en '{plain}'. Para instalar la tarea copialo antes a Program Files \
-             (p. ej. C:\\Program Files\\aegn\\aegn.exe): una tarea SYSTEM no debe lanzar un \
-             ejecutable que un usuario pueda sustituir."
+            "O aegn.exe está em '{plain}'. Para instalar a tarefa, instale-o primeiro em Program Files \
+             (ex.: C:\\Program Files\\AEGN\\aegn.exe): uma tarefa SYSTEM não deve lançar um \
+             executável que um utilizador consiga substituir."
         );
     }
     Ok(std::path::PathBuf::from(plain))
@@ -149,7 +149,10 @@ fn protected_exe() -> Result<std::path::PathBuf> {
 mod tests {
     #[test]
     fn la_tarea_respeta_el_modo_auditoria() {
-        assert_eq!(super::task_args(false), "run --apply --simple");
-        assert_eq!(super::task_args(true), "run --apply --simple --audit-only");
+        assert_eq!(super::task_args(false), "executar --aplicar --simples");
+        assert_eq!(
+            super::task_args(true),
+            "executar --aplicar --simples --so-auditoria"
+        );
     }
 }

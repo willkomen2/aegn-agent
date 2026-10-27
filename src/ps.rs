@@ -14,7 +14,7 @@ pub fn run(script: &str) -> Result<String> {
     let output = std::process::Command::new("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command", &script])
         .output()
-        .context("no se pudo invocar powershell")?;
+        .context("não foi possível invocar o PowerShell")?;
 
     let mut combined = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -24,7 +24,7 @@ pub fn run(script: &str) -> Result<String> {
     }
     if !output.status.success() {
         bail!(
-            "powershell termino con {}:\n{}",
+            "o PowerShell terminou com {}:\n{}",
             output.status,
             combined.trim()
         );

@@ -5,14 +5,17 @@
 //! se va a hacer o, tras lanzar una accion, su salida en vivo con scroll.
 //!
 //! Las acciones se ejecutan como un subproceso del propio binario con el
-//! subcomando de CLI equivalente (`aegn run ...`, `aegn audit list`...), asi la
+//! subcomando de CLI equivalente (`aegn executar ...`, `aegn auditoria listar`...), asi la
 //! salida se captura linea a linea sin tocar los modulos y el menu sigue abierto.
 //!
 //! Teclas: flechas o j/k mueven; Espacio conmuta; Enter ejecuta; a alterna el
 //! modo real; PgUp/PgDn/Inicio/Fin y flechas laterales desplazan la salida;
-//! c la limpia; q o Esc salen. En modo real se pide confirmacion antes de
-//! ejecutar.
+//! c la limpia; q o Esc salen. En modo real se pide la contraseña del agente
+//! antes de ejecutar; se verifica aqui y se pasa al subproceso por AEGN_SENHA.
+//!
+//! Los textos de pantalla estan en portugues.
 
+use crate::auth;
 use crate::process::ProcessConfig;
 use anyhow::{Context, Result};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
@@ -49,7 +52,6 @@ enum Entry {
     Events,
     ScheduleInstall,
     RevertAll,
-    GhWhoami,
     Quit,
 }
 
@@ -64,9 +66,9 @@ impl Entry {
 }
 
 const ENTRIES: &[Entry] = &[
-    Entry::Header("PROCESO"),
+    Entry::Header("PROCESSO"),
     Entry::Start,
-    Entry::Header("OPCIONES"),
+    Entry::Header("OPÇÕES"),
     Entry::ToggleSimple,
     Entry::ToggleRustdesk,
     Entry::ToggleOpencode,
@@ -74,14 +76,13 @@ const ENTRIES: &[Entry] = &[
     Entry::ToggleAuditOnly,
     Entry::ToggleFirewall,
     Entry::ToggleApply,
-    Entry::Header("HERRAMIENTAS"),
+    Entry::Header("FERRAMENTAS"),
     Entry::Audit,
     Entry::Admins,
     Entry::Status,
     Entry::Events,
     Entry::ScheduleInstall,
     Entry::RevertAll,
-    Entry::GhWhoami,
     Entry::Quit,
 ];
 
@@ -92,6 +93,13 @@ enum Msg {
     Line(String),
     /// Ambos flujos cerrados: el proceso ha terminado o esta terminando.
     Done,
+}
+
+/// Ventana de contraseña antes de una accion en modo real.
+struct Confirm {
+    entry: Entry,
+    input: String,
+    error: Option<&'static str>,
 }
 
 /// Ejecucion en curso o terminada de una accion.
@@ -115,8 +123,8 @@ struct App {
     banner: String,
     cfg: ProcessConfig,
     job: Option<Job>,
-    /// Accion pendiente de confirmar (modo real).
-    confirm: Option<Entry>,
+    /// Accion pendiente de confirmar con la contraseña (modo real).
+    confirm: Option<Confirm>,
     tick: usize,
     notice: Option<String>,
 }
@@ -165,8 +173,10 @@ impl App {
         let chk = |on: bool| if on { "[x]" } else { "[ ]" };
         match entry {
             Entry::Header(h) => h.to_string(),
-            Entry::Start => "Iniciar proceso".to_string(),
-            Entry::ToggleSimple => format!("{} Modo simple (sin inventario)", chk(self.cfg.simple)),
+            Entry::Start => "Iniciar processo".to_string(),
+            Entry::ToggleSimple => {
+                format!("{} Modo simples (sem inventário)", chk(self.cfg.simple))
+            }
             Entry::ToggleRustdesk => {
                 format!("{} Desinstalar RustDesk", chk(self.cfg.uninstall_rustdesk))
             }
@@ -174,45 +184,43 @@ impl App {
                 format!("{} Desinstalar OpenCode", chk(self.cfg.uninstall_opencode))
             }
             Entry::TogglePolicies => {
-                format!("{} Politicas de ejecucion", chk(self.cfg.apply_policies))
+                format!("{} Políticas de execução", chk(self.cfg.apply_policies))
             }
             Entry::ToggleAuditOnly => {
-                format!("  {} solo auditar (no bloquea)", chk(self.cfg.audit_only))
+                format!("  {} só auditar (não bloqueia)", chk(self.cfg.audit_only))
             }
             Entry::ToggleFirewall => {
-                format!("{} Firewall: acceso remoto", chk(self.cfg.firewall))
+                format!("{} Firewall: acesso remoto", chk(self.cfg.firewall))
             }
-            Entry::ToggleApply => format!("{} APLICAR DE VERDAD", chk(self.cfg.apply)),
+            Entry::ToggleApply => format!("{} APLICAR DE FACTO", chk(self.cfg.apply)),
             Entry::Audit => "Auditar software instalado".to_string(),
-            Entry::Admins => "Administradores locales".to_string(),
-            Entry::Status => "Estado de protecciones".to_string(),
-            Entry::Events => "Eventos AppLocker".to_string(),
-            Entry::ScheduleInstall => "Instalar tarea diaria".to_string(),
-            Entry::RevertAll => "Revertir todo lo de AEGN".to_string(),
-            Entry::GhWhoami => "GitHub: verificar token".to_string(),
-            Entry::Quit => "Salir".to_string(),
+            Entry::Admins => "Administradores locais".to_string(),
+            Entry::Status => "Estado das proteções".to_string(),
+            Entry::Events => "Eventos do AppLocker".to_string(),
+            Entry::ScheduleInstall => "Instalar tarefa diária".to_string(),
+            Entry::RevertAll => "Reverter tudo do AEGN".to_string(),
+            Entry::Quit => "Sair".to_string(),
         }
     }
 
     fn help(&self, entry: Entry) -> &'static str {
         match entry {
             Entry::Header(_) => "",
-            Entry::Start => "Ejecuta el proceso con las opciones marcadas.",
-            Entry::ToggleSimple => "Omite el inventario previo y reduce la salida.",
-            Entry::ToggleRustdesk => "Incluye RustDesk (acceso remoto) en la desinstalacion.",
-            Entry::ToggleOpencode => "Incluye OpenCode en la desinstalacion.",
-            Entry::TogglePolicies => "AppLocker: solo se ejecutan programas, scripts y MSI de Windows y Program Files (los admins, todo). AppData\\Local y Downloads, denegados.",
-            Entry::ToggleAuditOnly => "AppLocker en modo auditoria: no bloquea, solo registra lo que bloquearia. Usalo primero en cada aula y revisa 'Eventos AppLocker'.",
-            Entry::ToggleFirewall => "Bloquea la salida por los puertos de RustDesk, AnyDesk y TeamViewer.",
-            Entry::ToggleApply => "Activo: cambios reales (requiere admin). Inactivo: solo simula.",
-            Entry::Audit => "Lista el software instalado sin cambiar nada.",
-            Entry::Admins => "Miembros del grupo Administradores. Ningun alumno debe estar.",
-            Entry::Status => "AppLocker y AppIDSvc, reglas de firewall y tarea programada.",
-            Entry::Events => "Ultimos bloqueos (y avisos de auditoria) registrados por AppLocker.",
-            Entry::ScheduleInstall => "Tarea SYSTEM que reaplica el proceso al arrancar y a diario. Requiere aegn.exe en Program Files.",
-            Entry::RevertAll => "Retira las reglas AppLocker y de firewall AEGN y la tarea programada.",
-            Entry::GhWhoami => "Verifica GITHUB_TOKEN e identifica al usuario.",
-            Entry::Quit => "Cierra el agente.",
+            Entry::Start => "Executa o processo com as opções marcadas.",
+            Entry::ToggleSimple => "Salta o inventário inicial e reduz a saída.",
+            Entry::ToggleRustdesk => "Inclui o RustDesk (acesso remoto) na desinstalação.",
+            Entry::ToggleOpencode => "Inclui o OpenCode na desinstalação.",
+            Entry::TogglePolicies => "AppLocker: só se executam programas, scripts e MSI do Windows e de Program Files (os administradores, tudo). AppData\\Local e Transferências, negados.",
+            Entry::ToggleAuditOnly => "AppLocker em modo auditoria: não bloqueia, só regista o que bloquearia. Use-o primeiro em cada sala e reveja os 'Eventos do AppLocker'.",
+            Entry::ToggleFirewall => "Bloqueia a saída pelas portas do RustDesk, AnyDesk e TeamViewer.",
+            Entry::ToggleApply => "Ativo: alterações reais (requer administrador e a senha do AEGN). Inativo: apenas simula.",
+            Entry::Audit => "Lista o software instalado sem alterar nada.",
+            Entry::Admins => "Membros do grupo Administradores. Nenhum aluno deve lá estar.",
+            Entry::Status => "AppLocker e AppIDSvc, regras de firewall, tarefa agendada e senha.",
+            Entry::Events => "Últimos bloqueios (e avisos de auditoria) registados pelo AppLocker.",
+            Entry::ScheduleInstall => "Tarefa SYSTEM que volta a aplicar o processo no arranque e todos os dias. Requer o aegn.exe em Program Files.",
+            Entry::RevertAll => "Retira as regras AppLocker e de firewall do AEGN e a tarefa agendada.",
+            Entry::Quit => "Fecha o AEGN Security.",
         }
     }
 
@@ -220,19 +228,19 @@ impl App {
     fn plan(&self) -> Vec<&'static str> {
         let c = &self.cfg;
         [
-            (!c.simple, "Inventario de software"),
-            (!c.simple, "Administradores locales"),
-            (c.uninstall_rustdesk, "Desinstalar RustDesk"),
-            (c.uninstall_opencode, "Desinstalar OpenCode"),
+            (!c.simple, "Inventário de software"),
+            (!c.simple, "Administradores locais"),
+            (c.uninstall_rustdesk, "Desinstalar o RustDesk"),
+            (c.uninstall_opencode, "Desinstalar o OpenCode"),
             (
                 c.apply_policies && !c.audit_only,
-                "AppLocker: bloquear carpetas de usuario",
+                "AppLocker: bloquear as pastas dos utilizadores",
             ),
             (
                 c.apply_policies && c.audit_only,
-                "AppLocker en modo auditoria",
+                "AppLocker em modo auditoria",
             ),
-            (c.firewall, "Firewall: puertos de acceso remoto"),
+            (c.firewall, "Firewall: portas de acesso remoto"),
         ]
         .into_iter()
         .filter_map(|(on, step)| on.then_some(step))
@@ -244,14 +252,14 @@ impl App {
         let c = &self.cfg;
         let mut args = match entry {
             Entry::Start => {
-                let mut a = vec!["run"];
+                let mut a = vec!["executar"];
                 for (on, flag) in [
-                    (c.simple, "--simple"),
-                    (!c.uninstall_rustdesk, "--no-rustdesk"),
-                    (!c.uninstall_opencode, "--no-opencode"),
-                    (!c.apply_policies, "--no-policies"),
-                    (c.apply_policies && c.audit_only, "--audit-only"),
-                    (!c.firewall, "--no-firewall"),
+                    (c.simple, "--simples"),
+                    (!c.uninstall_rustdesk, "--sem-rustdesk"),
+                    (!c.uninstall_opencode, "--sem-opencode"),
+                    (!c.apply_policies, "--sem-politicas"),
+                    (c.apply_policies && c.audit_only, "--so-auditoria"),
+                    (!c.firewall, "--sem-firewall"),
                 ] {
                     if on {
                         a.push(flag);
@@ -259,53 +267,90 @@ impl App {
                 }
                 a
             }
-            Entry::Audit => vec!["audit", "list"],
-            Entry::Admins => vec!["audit", "admins"],
-            Entry::Status => vec!["status"],
-            Entry::Events => vec!["policy", "events"],
-            Entry::ScheduleInstall if c.audit_only => vec!["schedule", "install", "--audit-only"],
-            Entry::ScheduleInstall => vec!["schedule", "install"],
-            Entry::RevertAll => vec!["revert"],
-            Entry::GhWhoami => vec!["gh", "whoami"],
+            Entry::Audit => vec!["auditoria", "listar"],
+            Entry::Admins => vec!["auditoria", "admins"],
+            Entry::Status => vec!["estado"],
+            Entry::Events => vec!["politica", "eventos"],
+            Entry::ScheduleInstall if c.audit_only => {
+                vec!["tarefa", "instalar", "--so-auditoria"]
+            }
+            Entry::ScheduleInstall => vec!["tarefa", "instalar"],
+            Entry::RevertAll => vec!["reverter"],
             _ => return None,
         };
         if c.apply && entry.destructive() {
-            args.push("--apply");
+            args.push("--aplicar");
         }
         Some(args)
     }
 
-    /// Enter sobre una entrada: conmuta, pide confirmacion o lanza la accion.
+    /// Enter sobre una entrada: conmuta, pide la contraseña o lanza la accion.
     fn activate(&mut self, entry: Entry) -> Result<()> {
         if self.toggle(entry) {
             return Ok(());
         }
         if self.running() {
-            self.notice = Some("Espera a que termine la accion en curso.".into());
+            self.notice = Some("Aguarde que a ação em curso termine.".into());
             return Ok(());
         }
         if entry == Entry::Start && self.plan().is_empty() {
-            self.notice = Some("No hay ningun paso marcado en Opciones.".into());
+            self.notice = Some("Não há nenhum passo marcado nas Opções.".into());
             return Ok(());
         }
         if self.cfg.apply && entry.destructive() {
-            self.confirm = Some(entry);
+            self.confirm = Some(Confirm {
+                entry,
+                input: String::new(),
+                error: None,
+            });
             return Ok(());
         }
-        self.launch(entry)
+        self.launch(entry, None)
     }
 
-    fn launch(&mut self, entry: Entry) -> Result<()> {
+    /// Tecla dentro de la ventana de contraseña.
+    fn confirm_key(&mut self, code: KeyCode) -> Result<()> {
+        let Some(c) = self.confirm.as_mut() else {
+            return Ok(());
+        };
+        match code {
+            KeyCode::Esc => {
+                self.confirm = None;
+                self.notice = Some("Cancelado.".into());
+            }
+            KeyCode::Backspace => {
+                c.input.pop();
+            }
+            KeyCode::Char(ch) => {
+                c.input.push(ch);
+                c.error = None;
+            }
+            KeyCode::Enter => {
+                if auth::verify(&c.input)? {
+                    let Confirm { entry, input, .. } = self.confirm.take().expect("confirm");
+                    self.launch(entry, Some(input))?;
+                } else {
+                    c.input.clear();
+                    c.error = Some("Senha incorreta.");
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// Lanza la accion. `password` ya verificada, solo en modo real.
+    fn launch(&mut self, entry: Entry, password: Option<String>) -> Result<()> {
         let Some(args) = self.args(entry) else {
             return Ok(());
         };
         let title = match entry {
-            _ if args.contains(&"--apply") => format!("{} [REAL]", self.label(entry)),
-            e if e.destructive() => format!("{} [dry-run]", self.label(entry)),
+            _ if args.contains(&"--aplicar") => format!("{} [REAL]", self.label(entry)),
+            e if e.destructive() => format!("{} [simulação]", self.label(entry)),
             _ => self.label(entry),
         };
         self.notice = None;
-        self.job = Some(spawn(title, &args)?);
+        self.job = Some(spawn(title, &args, password.as_deref())?);
         Ok(())
     }
 
@@ -359,15 +404,21 @@ impl App {
 }
 
 /// Lanza `aegn <args>` y lee stdout y stderr en hilos que envian cada linea.
-fn spawn(title: String, args: &[&str]) -> Result<Job> {
-    let exe = std::env::current_exe().context("no se pudo localizar el ejecutable")?;
-    let mut child = Command::new(exe)
-        .args(args)
+/// Sin terminal, la contraseña llega al subproceso por AEGN_SENHA.
+fn spawn(title: String, args: &[&str], password: Option<&str>) -> Result<Job> {
+    let exe = std::env::current_exe().context("não foi possível localizar o executável")?;
+    let mut cmd = Command::new(exe);
+    cmd.args(args)
+        .env_remove(auth::ENV)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    if let Some(pw) = password {
+        cmd.env(auth::ENV, pw);
+    }
+    let mut child = cmd
         .spawn()
-        .context("no se pudo lanzar el subproceso")?;
+        .context("não foi possível lançar o subprocesso")?;
 
     let (tx, rx) = mpsc::channel();
     let readers: Vec<Box<dyn Read + Send>> = vec![
@@ -476,20 +527,15 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal) -> Result<()> {
             continue;
         }
 
-        if let Some(entry) = app.confirm {
-            app.confirm = None;
-            if matches!(key.code, KeyCode::Char('s') | KeyCode::Char('S')) {
-                app.launch(entry)?;
-            } else {
-                app.notice = Some("Cancelado.".into());
-            }
+        if app.confirm.is_some() {
+            app.confirm_key(key.code)?;
             continue;
         }
 
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => {
                 if app.running() {
-                    app.notice = Some("Hay una accion en curso; espera a que termine.".into());
+                    app.notice = Some("Há uma ação em curso; aguarde que termine.".into());
                 } else {
                     return Ok(());
                 }
@@ -565,7 +611,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         )
     } else {
         Span::styled(
-            " DRY-RUN ",
+            " SIMULAÇÃO ",
             Style::default()
                 .fg(Color::Black)
                 .bg(Color::Green)
@@ -576,7 +622,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         .style(Style::default().fg(accent).add_modifier(Modifier::BOLD))
         .alignment(Alignment::Center)
         .block(
-            rounded(Line::from(" Escola AEGN · agente de endpoints "))
+            rounded(Line::from(" AEGN Security · Escola AEGN "))
                 .title(Line::from(vec![badge, Span::raw(" ")]).right_aligned())
                 .title_bottom(
                     Line::from(format!(" v{} ", env!("CARGO_PKG_VERSION"))).right_aligned(),
@@ -593,7 +639,7 @@ fn draw(f: &mut Frame, app: &mut App) {
     if app.job.is_some() {
         draw_output(f, app, body[1], accent);
     } else {
-        draw_detail(f, app, body[1], rounded(Line::from(" Detalle ")));
+        draw_detail(f, app, body[1], rounded(Line::from(" Detalhe ")));
     }
 
     // Barra inferior: aviso puntual o atajos.
@@ -611,25 +657,25 @@ fn draw(f: &mut Frame, app: &mut App) {
                 txt(" "),
                 key("↑↓"),
                 txt(" mover  "),
-                key("Espacio"),
+                key("Espaço"),
                 txt(" marcar  "),
                 key("Enter"),
-                txt(" ejecutar  "),
+                txt(" executar  "),
                 key("a"),
                 txt(" modo real  "),
                 key("PgUp/PgDn ←→"),
-                txt(" salida  "),
+                txt(" saída  "),
                 key("c"),
-                txt(" limpiar  "),
+                txt(" limpar  "),
                 key("q"),
-                txt(" salir"),
+                txt(" sair"),
             ])
         }
     };
     f.render_widget(Paragraph::new(footer), rows[2]);
 
-    if let Some(entry) = app.confirm {
-        draw_confirm(f, app, entry);
+    if let Some(c) = &app.confirm {
+        draw_confirm(f, app, c);
     }
 }
 
@@ -697,13 +743,13 @@ fn draw_detail(f: &mut Frame, app: &App, area: Rect, block: Block<'static>) {
     );
     if shows_plan {
         lines.push(Line::from(Span::styled(
-            "Plan de ejecucion",
+            "Plano de execução",
             dim.add_modifier(Modifier::BOLD),
         )));
         let plan = app.plan();
         if plan.is_empty() {
             lines.push(Line::from(Span::styled(
-                "  (ningun paso marcado)",
+                "  (nenhum passo marcado)",
                 Style::default().fg(Color::Yellow),
             )));
         }
@@ -736,12 +782,12 @@ fn draw_output(f: &mut Frame, app: &mut App, area: Rect, accent: Color) {
 
     let (state, color) = match job.exit {
         None => (
-            format!(" {} ejecutando ", SPINNER[tick % SPINNER.len()]),
+            format!(" {} a executar ", SPINNER[tick % SPINNER.len()]),
             Color::Yellow,
         ),
-        Some(Some(0)) => (" ok terminado ".to_string(), Color::Green),
-        Some(Some(code)) => (format!(" x error (codigo {code}) "), Color::Red),
-        Some(None) => (" x interrumpido ".to_string(), Color::Red),
+        Some(Some(0)) => (" ok concluído ".to_string(), Color::Green),
+        Some(Some(code)) => (format!(" x erro (código {code}) "), Color::Red),
+        Some(None) => (" x interrompido ".to_string(), Color::Red),
     };
 
     let inner_h = area.height.saturating_sub(2) as usize;
@@ -772,7 +818,7 @@ fn draw_output(f: &mut Frame, app: &mut App, area: Rect, accent: Color) {
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(accent))
-        .title(Line::from(format!(" Salida · {} ", job.title)))
+        .title(Line::from(format!(" Saída · {} ", job.title)))
         .title(
             Line::from(Span::styled(
                 state,
@@ -790,11 +836,14 @@ fn draw_output(f: &mut Frame, app: &mut App, area: Rect, accent: Color) {
 /// Color por tipo de linea segun las etiquetas que imprimen los modulos.
 fn line_style(line: &str) -> Style {
     let l = line.trim_start();
-    let fg = if l.starts_with("[ok]") || l.starts_with("Politica AEGN aplicada") {
+    let fg = if l.starts_with("[ok]") || l.starts_with("Política AEGN aplicada") {
         Color::Green
-    } else if l.starts_with("[aviso]") || l.starts_with("[dry-run]") || l.starts_with("NOT_FOUND") {
+    } else if l.starts_with("[aviso]")
+        || l.starts_with("[simulação]")
+        || l.starts_with("NAO_ENCONTRADO")
+    {
         Color::Yellow
-    } else if l.starts_with("Error") || l.starts_with("[stderr]") || l.starts_with("[error]") {
+    } else if l.starts_with("Error") || l.starts_with("[stderr]") || l.starts_with("[erro]") {
         Color::Red
     } else if l.starts_with("--") || l.starts_with("====") {
         Color::Cyan
@@ -806,10 +855,10 @@ fn line_style(line: &str) -> Style {
     Style::default().fg(fg)
 }
 
-fn draw_confirm(f: &mut Frame, app: &App, entry: Entry) {
+fn draw_confirm(f: &mut Frame, app: &App, c: &Confirm) {
     let area = f.area();
-    let w = 56.min(area.width);
-    let h = 8.min(area.height);
+    let w = 58.min(area.width);
+    let h = 10.min(area.height);
     let rect = Rect::new(
         area.x + (area.width - w) / 2,
         area.y + (area.height - h) / 2,
@@ -817,27 +866,38 @@ fn draw_confirm(f: &mut Frame, app: &App, entry: Entry) {
         h,
     );
 
+    let key = |k: &'static str| {
+        Span::styled(
+            k,
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Gray)
+                .add_modifier(Modifier::BOLD),
+        )
+    };
+    let status = match c.error {
+        Some(e) => Line::from(Span::styled(e, Style::default().fg(Color::Red))),
+        None => Line::from(""),
+    };
     let text = vec![
         Line::from(Span::styled(
-            app.label(entry),
+            app.label(c.entry),
             Style::default().add_modifier(Modifier::BOLD),
         )),
-        Line::from("Se aplicaran cambios REALES en este equipo."),
-        Line::from("Requiere consola de administrador."),
+        Line::from("Vão ser aplicadas alterações REAIS neste computador."),
         Line::from(""),
         Line::from(vec![
+            Span::raw("Senha: "),
             Span::styled(
-                " s ",
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Red)
-                    .add_modifier(Modifier::BOLD),
+                format!("{:<20}", "*".repeat(c.input.chars().count().min(20))),
+                Style::default().fg(Color::White).bg(Color::DarkGray),
             ),
-            Span::raw(" continuar    "),
-            Span::styled(
-                " otra tecla ",
-                Style::default().fg(Color::Black).bg(Color::Gray),
-            ),
+        ]),
+        status,
+        Line::from(vec![
+            key(" Enter "),
+            Span::raw(" confirmar    "),
+            key(" Esc "),
             Span::raw(" cancelar"),
         ]),
     ];
@@ -846,7 +906,7 @@ fn draw_confirm(f: &mut Frame, app: &App, entry: Entry) {
             .borders(Borders::ALL)
             .border_type(BorderType::Double)
             .border_style(Style::default().fg(Color::Red))
-            .title(Line::from(" Confirmar ").centered()),
+            .title(Line::from(" Confirmar com a senha ").centered()),
     );
     f.render_widget(Clear, rect);
     f.render_widget(p, rect);

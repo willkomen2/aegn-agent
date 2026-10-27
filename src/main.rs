@@ -1,4 +1,4 @@
-//! aegn-agent — Agente de administracion y seguridad de endpoints de la Escola AEGN.
+//! AEGN Security — sistema de seguridad de los equipos de la Escola AEGN.
 //!
 //! Herramienta interna para que el administrador de sistemas mantenga las maquinas
 //! de la escuela como material de estudio: auditar e desinstalar software no
@@ -6,14 +6,16 @@
 //! usuario, usando mecanismos nativos de Windows (winget, AppLocker, directivas).
 //!
 //! Diseño:
-//! - Todas las acciones destructivas son dry-run por defecto; hay que pasar
-//!   `--apply` para ejecutarlas de verdad.
+//! - Todas las acciones destructivas son simulacion por defecto; hay que pasar
+//!   `--aplicar` para ejecutarlas de verdad, y piden la contraseña del agente.
 //! - Las operaciones de sistema requieren consola de administrador en Windows.
 //! - Sin argumentos abre el menu TUI interactivo.
+//! - La interfaz esta en portugues; los nombres en ingles de la v0.1 siguen
+//!   funcionando como alias.
 
 mod audit;
+mod auth;
 mod firewall;
-mod github;
 mod policy;
 mod process;
 #[cfg(windows)]
@@ -22,14 +24,17 @@ mod schedule;
 mod tui;
 
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{Arg, ArgAction, CommandFactory, FromArgMatches, Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(
     name = "aegn",
     version,
-    about = "Agente de administracion y seguridad de endpoints - Escola AEGN",
-    long_about = None
+    about = "AEGN Security - sistema de segurança dos computadores da Escola AEGN",
+    long_about = None,
+    disable_help_flag = true,
+    disable_version_flag = true,
+    disable_help_subcommand = true
 )]
 struct Cli {
     #[command(subcommand)]
@@ -38,111 +43,123 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Abre el menu interactivo (TUI con banner ASCII). Es el modo por defecto.
+    /// Abre o menu interativo. É o modo por defeito.
     Menu,
 
-    /// Ejecuta el proceso de mantenimiento completo (version no interactiva).
-    Run {
-        /// Modo simple: omite el inventario previo.
-        #[arg(long)]
-        simple: bool,
-        /// No desinstalar RustDesk.
-        #[arg(long)]
-        no_rustdesk: bool,
-        /// No desinstalar OpenCode.
-        #[arg(long)]
-        no_opencode: bool,
-        /// No aplicar politicas de ejecucion.
-        #[arg(long)]
-        no_policies: bool,
-        /// AppLocker en modo auditoria: registra lo que bloquearia, sin bloquear.
-        #[arg(long)]
-        audit_only: bool,
-        /// No crear las reglas de firewall contra herramientas de acceso remoto.
-        #[arg(long)]
-        no_firewall: bool,
-        /// Aplica cambios reales (por defecto es dry-run).
-        #[arg(long)]
-        apply: bool,
+    /// Executa o processo de manutenção completo.
+    #[command(alias = "run")]
+    Executar {
+        /// Modo simples: salta o inventário inicial.
+        #[arg(long, alias = "simple")]
+        simples: bool,
+        /// Não desinstalar o RustDesk.
+        #[arg(long, alias = "no-rustdesk")]
+        sem_rustdesk: bool,
+        /// Não desinstalar o OpenCode.
+        #[arg(long, alias = "no-opencode")]
+        sem_opencode: bool,
+        /// Não aplicar as políticas de execução (AppLocker).
+        #[arg(long, alias = "no-policies")]
+        sem_politicas: bool,
+        /// AppLocker em modo auditoria: regista o que bloquearia, sem bloquear.
+        #[arg(long = "so-auditoria", alias = "audit-only")]
+        so_auditoria: bool,
+        /// Não criar as regras de firewall contra acesso remoto.
+        #[arg(long, alias = "no-firewall")]
+        sem_firewall: bool,
+        /// Aplica as alterações (por defeito apenas simula). Pede a senha.
+        #[arg(long, alias = "apply")]
+        aplicar: bool,
     },
 
-    /// Auditoria y remocion de software no autorizado.
-    Audit {
+    /// Auditoria e remoção de software não autorizado.
+    #[command(alias = "audit")]
+    Auditoria {
         #[command(subcommand)]
         action: AuditAction,
     },
 
-    /// Politicas de restriccion de ejecucion en carpetas de usuario.
-    Policy {
+    /// Políticas de restrição de execução nas pastas dos utilizadores.
+    #[command(alias = "policy")]
+    Politica {
         #[command(subcommand)]
         action: PolicyAction,
     },
 
-    /// Bloqueo saliente de herramientas de acceso remoto en el firewall.
+    /// Bloqueio de saída das ferramentas de acesso remoto no firewall.
     Firewall {
         #[command(subcommand)]
         action: FirewallAction,
     },
 
-    /// Tarea programada (SYSTEM) que reaplica el proceso a diario.
-    Schedule {
+    /// Tarefa agendada (SYSTEM) que volta a aplicar o processo todos os dias.
+    #[command(alias = "schedule")]
+    Tarefa {
         #[command(subcommand)]
         action: ScheduleAction,
     },
 
-    /// Estado de todas las protecciones: AppLocker, firewall y tarea.
-    Status,
+    /// Estado de todas as proteções: AppLocker, firewall, tarefa e senha.
+    #[command(alias = "status")]
+    Estado,
 
-    /// Deshace todo lo aplicado por el agente (AppLocker, firewall y tarea).
-    Revert {
-        #[arg(long)]
-        apply: bool,
+    /// Desfaz tudo o que o agente aplicou (AppLocker, firewall e tarefa).
+    #[command(alias = "revert")]
+    Reverter {
+        #[arg(long, alias = "apply")]
+        aplicar: bool,
     },
 
-    /// Interaccion con GitHub (gestion del repositorio del proyecto).
-    Gh {
+    /// Senha de administração do agente (por defeito: admin).
+    Senha {
         #[command(subcommand)]
-        action: GhAction,
+        action: SenhaAction,
     },
 }
 
 #[derive(Subcommand)]
 enum AuditAction {
-    /// Lista el software instalado detectado en la maquina.
-    List,
-    /// Lista los miembros del grupo local de Administradores.
+    /// Lista o software instalado no computador.
+    #[command(alias = "list")]
+    Listar,
+    /// Lista os membros do grupo local de Administradores.
     Admins,
-    /// Desinstala un programa no autorizado por nombre (ej: RustDesk, OpenCode).
-    Remove {
-        /// Nombre o identificador del paquete a desinstalar.
-        name: String,
-        /// Ejecuta la desinstalacion de verdad (por defecto es dry-run).
-        #[arg(long)]
-        apply: bool,
+    /// Desinstala um programa não autorizado pelo nome (ex.: RustDesk, OpenCode).
+    #[command(alias = "remove")]
+    Remover {
+        /// Nome do programa a desinstalar.
+        nome: String,
+        /// Desinstala de facto (por defeito apenas simula). Pede a senha.
+        #[arg(long, alias = "apply")]
+        aplicar: bool,
     },
 }
 
 #[derive(Subcommand)]
 enum PolicyAction {
-    /// Muestra el estado actual de las politicas de restriccion.
-    Status,
-    /// Aplica el bloqueo de ejecucion en AppData\Local y Downloads.
-    Enforce {
-        /// Aplica la politica de verdad (por defecto genera y muestra sin aplicar).
-        #[arg(long)]
-        apply: bool,
-        /// Modo auditoria: registra lo que bloquearia, sin bloquear.
-        #[arg(long)]
-        audit_only: bool,
+    /// Mostra o estado atual das políticas AppLocker.
+    #[command(alias = "status")]
+    Estado,
+    /// Bloqueia a execução em AppData\Local, Transferências e restantes pastas de utilizador.
+    #[command(alias = "enforce")]
+    Impor {
+        /// Aplica a política (por defeito apenas a mostra). Pede a senha.
+        #[arg(long, alias = "apply")]
+        aplicar: bool,
+        /// Modo auditoria: regista o que bloquearia, sem bloquear.
+        #[arg(long = "so-auditoria", alias = "audit-only")]
+        so_auditoria: bool,
     },
-    /// Revierte las politicas de restriccion aplicadas por el agente.
-    Revert {
-        #[arg(long)]
-        apply: bool,
+    /// Retira as regras AppLocker do agente.
+    #[command(alias = "revert")]
+    Reverter {
+        #[arg(long, alias = "apply")]
+        aplicar: bool,
     },
-    /// Ultimos eventos de AppLocker (bloqueos y auditoria).
-    Events {
-        /// Numero maximo de eventos.
+    /// Últimos eventos do AppLocker (bloqueios e auditoria).
+    #[command(alias = "events")]
+    Eventos {
+        /// Número máximo de eventos.
         #[arg(long, default_value_t = 30)]
         max: u32,
     },
@@ -150,94 +167,213 @@ enum PolicyAction {
 
 #[derive(Subcommand)]
 enum FirewallAction {
-    /// Muestra las reglas AEGN y el estado de los perfiles del firewall.
-    Status,
-    /// Crea las reglas de bloqueo saliente.
-    Enforce {
-        #[arg(long)]
-        apply: bool,
+    /// Mostra as regras AEGN e o estado dos perfis do firewall.
+    #[command(alias = "status")]
+    Estado,
+    /// Cria as regras de bloqueio de saída.
+    #[command(alias = "enforce")]
+    Impor {
+        #[arg(long, alias = "apply")]
+        aplicar: bool,
     },
-    /// Elimina las reglas AEGN.
-    Revert {
-        #[arg(long)]
-        apply: bool,
+    /// Elimina as regras AEGN.
+    #[command(alias = "revert")]
+    Reverter {
+        #[arg(long, alias = "apply")]
+        aplicar: bool,
     },
 }
 
 #[derive(Subcommand)]
 enum ScheduleAction {
-    /// Estado de la tarea y ultimas lineas del log.
-    Status,
-    /// Registra la tarea (requiere aegn.exe dentro de Program Files).
-    Install {
-        #[arg(long)]
-        apply: bool,
-        /// La tarea aplica AppLocker en modo auditoria.
-        #[arg(long)]
-        audit_only: bool,
+    /// Estado da tarefa e últimas linhas do registo.
+    #[command(alias = "status")]
+    Estado,
+    /// Regista a tarefa (exige o aegn.exe dentro de Program Files).
+    #[command(alias = "install")]
+    Instalar {
+        #[arg(long, alias = "apply")]
+        aplicar: bool,
+        /// A tarefa aplica o AppLocker em modo auditoria.
+        #[arg(long = "so-auditoria", alias = "audit-only")]
+        so_auditoria: bool,
     },
-    /// Elimina la tarea.
-    Remove {
-        #[arg(long)]
-        apply: bool,
+    /// Elimina a tarefa.
+    #[command(alias = "remove")]
+    Remover {
+        #[arg(long, alias = "apply")]
+        aplicar: bool,
     },
 }
 
 #[derive(Subcommand)]
-enum GhAction {
-    /// Verifica el token (GITHUB_TOKEN) e imprime el usuario autenticado.
-    Whoami,
+enum SenhaAction {
+    /// Altera a senha (pede a atual e a nova).
+    Alterar,
+    /// Indica se ainda se usa a senha por defeito.
+    Estado,
+    /// Verifica uma senha (código de saída 0 se for correta).
+    Verificar,
+}
+
+impl Command {
+    /// true si el comando va a cambiar el equipo y debe pedir la contraseña.
+    fn applies(&self) -> bool {
+        match self {
+            Command::Executar { aplicar, .. }
+            | Command::Reverter { aplicar }
+            | Command::Auditoria {
+                action: AuditAction::Remover { aplicar, .. },
+            }
+            | Command::Politica {
+                action: PolicyAction::Impor { aplicar, .. } | PolicyAction::Reverter { aplicar },
+            }
+            | Command::Firewall {
+                action: FirewallAction::Impor { aplicar } | FirewallAction::Reverter { aplicar },
+            }
+            | Command::Tarefa {
+                action:
+                    ScheduleAction::Instalar { aplicar, .. } | ScheduleAction::Remover { aplicar },
+            } => *aplicar,
+            _ => false,
+        }
+    }
+}
+
+/// Ayuda de clap en portugues: titulos, flags -h/-V y plantilla, en todos los
+/// subcomandos.
+fn localize(cmd: clap::Command) -> clap::Command {
+    cmd.help_template("{about-with-newline}\nUso: {usage}\n\n{all-args}{after-help}")
+        .subcommand_help_heading("Comandos")
+        .subcommand_value_name("COMANDO")
+        .disable_help_subcommand(true)
+        .mut_args(|a| {
+            let heading = if a.is_positional() {
+                "Argumentos"
+            } else {
+                "Opções"
+            };
+            a.help_heading(heading)
+        })
+        .mut_subcommands(localize)
+}
+
+fn cli() -> clap::Command {
+    let cmd = Cli::command()
+        .arg(
+            Arg::new("ajuda")
+                .short('h')
+                .long("help")
+                .action(ArgAction::Help)
+                .global(true)
+                .help("Mostra esta ajuda"),
+        )
+        .arg(
+            Arg::new("versao")
+                .short('V')
+                .long("version")
+                .action(ArgAction::Version)
+                .help("Mostra a versão"),
+        );
+    localize(cmd)
 }
 
 fn main() -> Result<()> {
-    let cli = Cli::parse();
+    let cli = Cli::from_arg_matches(&cli().get_matches())?;
+
+    if cli.command.as_ref().is_some_and(Command::applies) {
+        auth::require()?;
+    }
 
     match cli.command {
         None | Some(Command::Menu) => tui::run()?,
-        Some(Command::Run {
-            simple,
-            no_rustdesk,
-            no_opencode,
-            no_policies,
-            audit_only,
-            no_firewall,
-            apply,
+        Some(Command::Executar {
+            simples,
+            sem_rustdesk,
+            sem_opencode,
+            sem_politicas,
+            so_auditoria,
+            sem_firewall,
+            aplicar,
         }) => process::run(&process::ProcessConfig {
-            simple,
-            uninstall_rustdesk: !no_rustdesk,
-            uninstall_opencode: !no_opencode,
-            apply_policies: !no_policies,
-            audit_only,
-            firewall: !no_firewall,
-            apply,
+            simple: simples,
+            uninstall_rustdesk: !sem_rustdesk,
+            uninstall_opencode: !sem_opencode,
+            apply_policies: !sem_politicas,
+            audit_only: so_auditoria,
+            firewall: !sem_firewall,
+            apply: aplicar,
         })?,
-        Some(Command::Audit { action }) => match action {
-            AuditAction::List => audit::list()?,
+        Some(Command::Auditoria { action }) => match action {
+            AuditAction::Listar => audit::list()?,
             AuditAction::Admins => audit::admins()?,
-            AuditAction::Remove { name, apply } => audit::remove(&name, apply)?,
+            AuditAction::Remover { nome, aplicar } => audit::remove(&nome, aplicar)?,
         },
-        Some(Command::Policy { action }) => match action {
-            PolicyAction::Status => policy::status()?,
-            PolicyAction::Enforce { apply, audit_only } => policy::enforce(apply, audit_only)?,
-            PolicyAction::Revert { apply } => policy::revert(apply)?,
-            PolicyAction::Events { max } => policy::events(max)?,
+        Some(Command::Politica { action }) => match action {
+            PolicyAction::Estado => policy::status()?,
+            PolicyAction::Impor {
+                aplicar,
+                so_auditoria,
+            } => policy::enforce(aplicar, so_auditoria)?,
+            PolicyAction::Reverter { aplicar } => policy::revert(aplicar)?,
+            PolicyAction::Eventos { max } => policy::events(max)?,
         },
         Some(Command::Firewall { action }) => match action {
-            FirewallAction::Status => firewall::status()?,
-            FirewallAction::Enforce { apply } => firewall::enforce(apply)?,
-            FirewallAction::Revert { apply } => firewall::revert(apply)?,
+            FirewallAction::Estado => firewall::status()?,
+            FirewallAction::Impor { aplicar } => firewall::enforce(aplicar)?,
+            FirewallAction::Reverter { aplicar } => firewall::revert(aplicar)?,
         },
-        Some(Command::Schedule { action }) => match action {
-            ScheduleAction::Status => schedule::status()?,
-            ScheduleAction::Install { apply, audit_only } => schedule::install(apply, audit_only)?,
-            ScheduleAction::Remove { apply } => schedule::remove(apply)?,
+        Some(Command::Tarefa { action }) => match action {
+            ScheduleAction::Estado => schedule::status()?,
+            ScheduleAction::Instalar {
+                aplicar,
+                so_auditoria,
+            } => schedule::install(aplicar, so_auditoria)?,
+            ScheduleAction::Remover { aplicar } => schedule::remove(aplicar)?,
         },
-        Some(Command::Status) => process::status_all()?,
-        Some(Command::Revert { apply }) => process::revert_all(apply)?,
-        Some(Command::Gh { action }) => match action {
-            GhAction::Whoami => github::whoami()?,
+        Some(Command::Estado) => process::status_all()?,
+        Some(Command::Reverter { aplicar }) => process::revert_all(aplicar)?,
+        Some(Command::Senha { action }) => match action {
+            SenhaAction::Alterar => auth::change()?,
+            SenhaAction::Estado => auth::status()?,
+            SenhaAction::Verificar => auth::check()?,
         },
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(args: &[&str]) -> Command {
+        let m = cli()
+            .try_get_matches_from(std::iter::once("aegn").chain(args.iter().copied()))
+            .unwrap();
+        Cli::from_arg_matches(&m).unwrap().command.unwrap()
+    }
+
+    #[test]
+    fn solo_aplicar_pide_contrasena() {
+        assert!(!parse(&["executar"]).applies());
+        assert!(parse(&["executar", "--aplicar"]).applies());
+        assert!(parse(&["reverter", "--aplicar"]).applies());
+        assert!(parse(&["tarefa", "instalar", "--aplicar"]).applies());
+        assert!(!parse(&["estado"]).applies());
+        assert!(!parse(&["politica", "eventos"]).applies());
+    }
+
+    #[test]
+    fn la_ayuda_es_valida() {
+        cli().debug_assert();
+    }
+
+    #[test]
+    fn los_nombres_de_la_v01_siguen_funcionando() {
+        assert!(parse(&["run", "--apply", "--audit-only", "--simple"]).applies());
+        assert!(parse(&["policy", "enforce", "--apply"]).applies());
+        assert!(!parse(&["status"]).applies());
+        assert!(parse(&["schedule", "install", "--apply"]).applies());
+    }
 }

@@ -1,8 +1,8 @@
 [package]
 name = "aegn-agent"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-description = "Agente de administracion y seguridad de endpoints para el parque informatico de la Escola AEGN"
+description = "AEGN Security: sistema de segurança dos computadores da Escola AEGN"
 authors = ["Escola AEGN - IT"]
 license = "MIT"
 # El binario se instala como `aegn` para uso comodo desde la consola del administrador.
@@ -21,11 +21,16 @@ crossterm = "0.28"
 figlet-rs = "0.1"
 # Manejo de errores ergonomico.
 anyhow = "1"
-# Serializacion (reportes de auditoria, politicas).
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-# Cliente HTTP ligero para la API de GitHub (gestion del repo del proyecto).
-ureq = { version = "2.10", features = ["json"] }
+# Contraseña de administración: PBKDF2-HMAC-SHA256 con sal aleatoria.
+pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
+sha2 = "0.10"
+getrandom = "0.2"
+# Lectura de la contraseña en consola sin eco.
+rpassword = "7"
+
+[target.'cfg(windows)'.dependencies]
+# La contraseña se guarda en HKLM, donde solo escriben los administradores.
+winreg = "0.55"
 
 [profile.release]
 opt-level = "z"
