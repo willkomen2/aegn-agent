@@ -7,7 +7,7 @@
   - Ao desinstalar, elimina a tarefa agendada AEGN-Agent (apontaria para um
     executável que já não existe) e a senha guardada em HKLM\SOFTWARE\AEGN.
     As regras AppLocker e de firewall mantêm-se: para as retirar, execute
-    "aegn reverter --aplicar" antes de desinstalar (o desinstalar.cmd faz isso).
+    "aegn reverter" com a opção aplicar antes de desinstalar (o desinstalar.cmd faz isso).
 
   Compilar (Windows):
     wix build installer\aegn.wxs -arch x64 -d Version=0.2.0 -d ExePath=target\release\aegn.exe -o AEGN-Security.msi
