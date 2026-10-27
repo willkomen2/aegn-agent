@@ -16,7 +16,7 @@
     "aegn reverter" com a opção aplicar antes de desinstalar (o desinstalar.cmd faz isso).
 
   Compilar (Windows):
-    wix build installer\aegn.wxs -arch x64 -d Version=0.5.1 -d ExePath=target\release\aegn.exe -o AEGN-Security.msi
+    wix build installer\aegn.wxs -arch x64 -d Version=0.5.2 -d ExePath=target\release\aegn.exe -o AEGN-Security.msi
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="AEGN Security"
@@ -95,6 +95,14 @@
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore" />
+    <!-- Substitui as regras AppLocker de versões anteriores (se existirem)
+         pelas desta versão, que não bloqueiam os administradores nem o Windows. -->
+    <CustomAction Id="AtualizarPolitica"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[INSTALLFOLDER]aegn.exe&quot; politica atualizar --aplicar"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
     <CustomAction Id="RetirarNavegador"
                   Directory="INSTALLFOLDER"
                   ExeCommand="&quot;[INSTALLFOLDER]aegn.exe&quot; navegador reverter --aplicar"
@@ -114,6 +122,8 @@
       <Custom Action="RegistarAtualizacao" After="InstallFiles"
               Condition="NOT REMOVE=&quot;ALL&quot;" />
       <Custom Action="AplicarNavegador" After="RegistarAtualizacao"
+              Condition="NOT REMOVE=&quot;ALL&quot;" />
+      <Custom Action="AtualizarPolitica" After="AplicarNavegador"
               Condition="NOT REMOVE=&quot;ALL&quot;" />
     </InstallExecuteSequence>
   </Package>

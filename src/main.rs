@@ -199,7 +199,7 @@ enum PolicyAction {
     /// Mostra o estado atual das políticas AppLocker.
     #[command(alias = "status")]
     Estado,
-    /// Bloqueia a execução em AppData\Local, Transferências e restantes pastas de utilizador.
+    /// Bloqueia aos alunos a execução em AppData, Transferências e restantes pastas de utilizador.
     #[command(alias = "enforce")]
     Impor {
         /// Aplica a política (por defeito apenas a mostra). Pede a senha.
@@ -208,6 +208,13 @@ enum PolicyAction {
         /// Modo auditoria: regista o que bloquearia, sem bloquear.
         #[arg(long = "so-auditoria", alias = "audit-only")]
         so_auditoria: bool,
+    },
+    /// Volta a aplicar as regras do agente, no mesmo modo, se já estiverem
+    /// aplicadas. O instalador usa-o para corrigir as de versões anteriores.
+    #[command(alias = "refresh")]
+    Atualizar {
+        #[arg(long, alias = "apply")]
+        aplicar: bool,
     },
     /// Retira as regras AppLocker do agente.
     #[command(alias = "revert")]
@@ -304,7 +311,10 @@ impl Command {
                 action: AuditAction::Remover { aplicar, .. } | AuditAction::Limpar { aplicar },
             }
             | Command::Politica {
-                action: PolicyAction::Impor { aplicar, .. } | PolicyAction::Reverter { aplicar },
+                action:
+                    PolicyAction::Impor { aplicar, .. }
+                    | PolicyAction::Atualizar { aplicar }
+                    | PolicyAction::Reverter { aplicar },
             }
             | Command::Firewall {
                 action: FirewallAction::Impor { aplicar } | FirewallAction::Reverter { aplicar },
@@ -405,6 +415,7 @@ fn main() -> Result<()> {
                 aplicar,
                 so_auditoria,
             } => policy::enforce(aplicar, so_auditoria)?,
+            PolicyAction::Atualizar { aplicar } => policy::refresh(aplicar)?,
             PolicyAction::Reverter { aplicar } => policy::revert(aplicar)?,
             PolicyAction::Eventos { max } => policy::events(max)?,
         },

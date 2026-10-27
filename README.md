@@ -207,8 +207,10 @@ aegn auditoria historico              # o que foi desinstalado e quando
   ou `%PROGRAMFILES%` (MSI: `%WINDIR%\Installer`); os administradores podem
   tudo. Ficam assim bloqueados `.exe`, `.ps1/.bat/.cmd/.vbs/.js` e `.msi`
   vindos de Transferências, Ambiente de Trabalho, AppData, Documentos ou uma
-  pen USB. AppData\Local e Transferências têm ainda um Deny explícito que se
-  aplica **também aos administradores**.
+  pen USB. Os administradores **nunca** são bloqueados. Também se permite,
+  esteja onde estiver, o que vem assinado pela Microsoft (OneDrive, Teams,
+  componentes do Windows que arrancam ao iniciar sessão), pela Google (Chrome)
+  e pela Mozilla (Firefox), mesmo instalados só para o utilizador.
 - **Firewall**: bloqueio de saída das portas do RustDesk (21114-21119),
   AnyDesk (6568) e TeamViewer (5938). O AnyDesk e o TeamViewer podem sair pela
   porta 443; para os cortar de vez é preciso filtrar por domínio (proxy ou DNS).
@@ -245,7 +247,7 @@ Em Windows, à mão:
 ```powershell
 cargo build --release
 dotnet tool install --global wix --version 5.0.2
-wix build installer\aegn.wxs -arch x64 -d Version=0.5.1 -d ExePath=target\release\aegn.exe -o AEGN-Security-0.5.1-x64.msi
+wix build installer\aegn.wxs -arch x64 -d Version=0.5.2 -d ExePath=target\release\aegn.exe -o AEGN-Security-0.5.2-x64.msi
 ```
 
 Em Linux pode verificar-se que o código de Windows compila (sem ligar):

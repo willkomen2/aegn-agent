@@ -11,8 +11,14 @@
 //!
 //! Colecciones: Exe, Script (.ps1 .bat .cmd .vbs .js) y Msi. En cada una solo
 //! se permite %WINDIR% y %PROGRAMFILES% (MSI: %WINDIR%\Installer) a todos y
-//! cualquier ruta a los administradores; lo demas queda bloqueado por defecto.
-//! AppData\Local y Downloads llevan ademas un Deny explicito en Exe.
+//! cualquier ruta a los administradores; lo demas queda bloqueado por defecto
+//! a los utilizadores normales (AppData, Downloads, Desktop, USB...).
+//!
+//! Sin reglas Deny: un Deny gana a todos los Allow, tambien al de los
+//! administradores, y bloqueaba lo que Windows arranca desde el perfil al
+//! iniciar sesion. Lo firmado por Microsoft (OneDrive, Teams, Edge WebView...)
+//! y los navegadores Chrome y Firefox se permiten por editor aunque esten
+//! instalados en AppData: un alumno no puede firmar sus binarios como ellos.
 //!
 //! Modo auditoria (`--so-auditoria`): `AuditOnly` no bloquea nada, solo registra en el visor de
 //! eventos lo que se habria bloqueado (ver `events`). Es el paso previo
@@ -27,71 +33,84 @@ const RULE_TAG: &str = "AEGN-Deny-UserFolders";
 const EVERYONE: &str = "S-1-1-0";
 const ADMINS: &str = "S-1-5-32-544";
 
-/// Una regla de ruta: (coleccion, nombre, sid, accion, ruta).
-type Rule = (
-    &'static str,
-    &'static str,
-    &'static str,
-    &'static str,
-    &'static str,
-);
+/// Condicion de una regla: ruta, o editor de la firma digital (producto).
+enum Cond {
+    Path(&'static str),
+    Publisher(&'static str, &'static str),
+}
 
-/// Reglas del agente. Las de Allow son las reglas por defecto de AppLocker:
-/// con una coleccion activa, lo que no case con ningun Allow queda bloqueado.
-/// Los Deny tienen prioridad sobre los Allow y aplican tambien a los admins.
+/// Una regla: (coleccion, nombre, sid, condicion). Todas son Allow.
+type Rule = (&'static str, &'static str, &'static str, Cond);
+
+const MICROSOFT: &str = "O=MICROSOFT CORPORATION, L=REDMOND, S=WASHINGTON, C=US";
+const GOOGLE: &str = "O=GOOGLE LLC, L=MOUNTAIN VIEW, S=CALIFORNIA, C=US";
+const MOZILLA: &str = "O=MOZILLA CORPORATION, L=SAN FRANCISCO, S=CALIFORNIA, C=US";
+
+/// Reglas del agente: con una coleccion activa, lo que no case con ningun
+/// Allow queda bloqueado. Los administradores tienen "*" en todas.
 const RULES: &[Rule] = &[
-    (
-        "Exe",
-        "AppData Local",
-        EVERYONE,
-        "Deny",
-        r"%OSDRIVE%\Users\*\AppData\Local\*",
-    ),
-    (
-        "Exe",
-        "Transferências",
-        EVERYONE,
-        "Deny",
-        r"%OSDRIVE%\Users\*\Downloads\*",
-    ),
     (
         "Exe",
         "Permitir Program Files",
         EVERYONE,
-        "Allow",
-        r"%PROGRAMFILES%\*",
+        Cond::Path(r"%PROGRAMFILES%\*"),
     ),
-    ("Exe", "Permitir Windows", EVERYONE, "Allow", r"%WINDIR%\*"),
-    ("Exe", "Permitir Administradores", ADMINS, "Allow", "*"),
+    (
+        "Exe",
+        "Permitir Windows",
+        EVERYONE,
+        Cond::Path(r"%WINDIR%\*"),
+    ),
+    ("Exe", "Permitir Administradores", ADMINS, Cond::Path("*")),
+    (
+        "Exe",
+        "Assinados pela Microsoft",
+        EVERYONE,
+        Cond::Publisher(MICROSOFT, "*"),
+    ),
+    (
+        "Exe",
+        "Google Chrome",
+        EVERYONE,
+        Cond::Publisher(GOOGLE, "*"),
+    ),
+    (
+        "Exe",
+        "Mozilla Firefox",
+        EVERYONE,
+        Cond::Publisher(MOZILLA, "*"),
+    ),
     (
         "Script",
         "Scripts em Program Files",
         EVERYONE,
-        "Allow",
-        r"%PROGRAMFILES%\*",
+        Cond::Path(r"%PROGRAMFILES%\*"),
     ),
     (
         "Script",
         "Scripts do Windows",
         EVERYONE,
-        "Allow",
-        r"%WINDIR%\*",
+        Cond::Path(r"%WINDIR%\*"),
     ),
     (
         "Script",
         "Scripts dos Administradores",
         ADMINS,
-        "Allow",
-        "*",
+        Cond::Path("*"),
+    ),
+    (
+        "Script",
+        "Scripts da Microsoft",
+        EVERYONE,
+        Cond::Publisher(MICROSOFT, "*"),
     ),
     (
         "Msi",
         "Instaladores do Windows",
         EVERYONE,
-        "Allow",
-        r"%WINDIR%\Installer\*",
+        Cond::Path(r"%WINDIR%\Installer\*"),
     ),
-    ("Msi", "MSI dos Administradores", ADMINS, "Allow", "*"),
+    ("Msi", "MSI dos Administradores", ADMINS, Cond::Path("*")),
 ];
 
 /// Politica AppLocker en XML. `audit_only` la deja en modo AuditOnly.
@@ -102,14 +121,23 @@ fn applocker_policy_xml(audit_only: bool) -> String {
         xml.push_str(&format!(
             "  <RuleCollection Type=\"{collection}\" EnforcementMode=\"{mode}\">\n"
         ));
-        for (i, (_, name, sid, action, path)) in
-            RULES.iter().enumerate().filter(|(_, r)| r.0 == collection)
+        for (i, (_, name, sid, cond)) in RULES.iter().enumerate().filter(|(_, r)| r.0 == collection)
         {
+            let (kind, condition) = match cond {
+                Cond::Path(path) => ("FilePathRule", format!("<FilePathCondition Path=\"{path}\" />")),
+                Cond::Publisher(publisher, product) => (
+                    "FilePublisherRule",
+                    format!(
+                        "<FilePublisherCondition PublisherName=\"{publisher}\" ProductName=\"{product}\" BinaryName=\"*\">\
+                         <BinaryVersionRange LowSection=\"*\" HighSection=\"*\" /></FilePublisherCondition>"
+                    ),
+                ),
+            };
             xml.push_str(&format!(
-                "    <FilePathRule Id=\"ae6e0000-0000-4000-8000-0000000000{:02x}\" Name=\"{RULE_TAG}: {name}\" \
-                 Description=\"AEGN Security - Escola AEGN\" UserOrGroupSid=\"{sid}\" Action=\"{action}\">\n\
-                 \x20     <Conditions><FilePathCondition Path=\"{path}\" /></Conditions>\n\
-                 \x20   </FilePathRule>\n",
+                "    <{kind} Id=\"ae6e0000-0000-4000-8000-0000000000{:02x}\" Name=\"{RULE_TAG}: {name}\" \
+                 Description=\"AEGN Security - Escola AEGN\" UserOrGroupSid=\"{sid}\" Action=\"Allow\">\n\
+                 \x20     <Conditions>{condition}</Conditions>\n\
+                 \x20   </{kind}>\n",
                 i + 1
             ));
         }
@@ -129,7 +157,7 @@ if ($svc) { Write-Output ("Serviço AppIDSvc (AppLocker): " + $svc.Status) }
 else { Write-Output "Serviço AppIDSvc não encontrado." }
 foreach ($c in (Get-AppLockerPolicy -Effective).RuleCollections) {
   Write-Output ("--- " + $c.RuleCollectionType + ": " + $c.EnforcementMode + " ---")
-  $c | ForEach-Object { "  " + $_.Action + "  " + $_.Name + "  " + ($_.PathConditions -join ', ') }
+  $c | ForEach-Object { "  " + $_.Action + "  " + $_.Name + "  " + (@($_.PathConditions) + @($_.PublisherConditions) -join ', ') }
 }
 "#;
         print!("{}", crate::ps::run(ps)?);
@@ -188,6 +216,38 @@ Write-Output "Política AEGN aplicada e fundida com a existente."
     #[cfg(not(windows))]
     {
         println!("[info] A aplicação de políticas só está disponível no Windows.");
+        Ok(())
+    }
+}
+
+/// Si las reglas del agente ya estan en la politica local, las sustituye por
+/// las de esta version manteniendo el modo (AuditOnly o Enabled). Si no estan,
+/// no hace nada: el bloqueo solo se activa cuando lo pide un administrador.
+pub fn refresh(apply: bool) -> Result<()> {
+    if !apply {
+        println!("[simulação] Se as regras '{RULE_TAG}' já estiverem aplicadas, seriam substituídas pelas desta versão.");
+        return Ok(());
+    }
+
+    #[cfg(windows)]
+    {
+        let ps = format!(
+            r#"[xml]$l = Get-AppLockerPolicy -Local -Xml
+$c = $l.SelectSingleNode("//RuleCollection[*[starts-with(@Name, '{RULE_TAG}')]]")
+if (-not $c) {{ 'nenhuma' }} elseif ($c.EnforcementMode -eq 'AuditOnly') {{ 'auditoria' }} else {{ 'ativa' }}"#
+        );
+        match crate::ps::run(&ps)?.trim() {
+            "nenhuma" => {
+                println!("Sem regras AEGN aplicadas: nada a atualizar.");
+                Ok(())
+            }
+            mode => enforce(true, mode == "auditoria"),
+        }
+    }
+
+    #[cfg(not(windows))]
+    {
+        println!("[info] A atualização das políticas só está disponível no Windows.");
         Ok(())
     }
 }
@@ -296,13 +356,16 @@ mod tests {
     }
 
     fn rules(xml: &str) -> Vec<&str> {
-        xml.split("<FilePathRule").skip(1).collect()
+        xml.split("Rule Id=").skip(1).collect()
     }
 
     #[test]
     fn ids_son_guids_validos_y_unicos() {
         let xml = applocker_policy_xml(false);
-        let ids: Vec<&str> = rules(&xml).iter().map(|r| attr(r, "Id")).collect();
+        let ids: Vec<&str> = rules(&xml)
+            .iter()
+            .map(|r| &r[1..r[1..].find('"').unwrap() + 1])
+            .collect();
         assert!(!ids.is_empty());
         for id in &ids {
             let parts: Vec<&str> = id.split('-').collect();
@@ -332,18 +395,30 @@ mod tests {
     }
 
     #[test]
-    fn deniega_carpetas_de_usuario_y_permite_admins() {
+    fn sin_deny_y_admins_libres() {
+        // Un Deny tambien alcanza a los administradores.
         let xml = applocker_policy_xml(false);
-        let has = |path: &str, action: &str, sid: &str| {
-            rules(&xml).iter().any(|r| {
-                r.contains(&format!("Path=\"{path}\""))
-                    && attr(r, "Action") == action
-                    && attr(r, "UserOrGroupSid") == sid
-            })
-        };
-        assert!(has(r"%OSDRIVE%\Users\*\AppData\Local\*", "Deny", "S-1-1-0"));
-        assert!(has(r"%OSDRIVE%\Users\*\Downloads\*", "Deny", "S-1-1-0"));
-        assert!(has("*", "Allow", "S-1-5-32-544"));
+        assert!(!xml.contains("Action=\"Deny\""));
+        for c in ["Exe", "Script", "Msi"] {
+            assert!(
+                RULES
+                    .iter()
+                    .any(|r| r.0 == c && r.2 == ADMINS && matches!(r.3, Cond::Path("*"))),
+                "admins sin \"*\" en {c}"
+            );
+        }
+    }
+
+    #[test]
+    fn permite_chrome_y_microsoft_por_editor() {
+        let xml = applocker_policy_xml(false);
+        for p in [MICROSOFT, GOOGLE, MOZILLA] {
+            assert!(xml.contains(&format!("PublisherName=\"{p}\"")), "falta {p}");
+        }
+        assert_eq!(
+            xml.matches("<FilePublisherRule").count(),
+            xml.matches("</FilePublisherRule>").count()
+        );
     }
 
     #[test]

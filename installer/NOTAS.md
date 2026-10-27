@@ -14,6 +14,14 @@ caso a senha fica `admin` até a alterar com `aegn senha alterar`.
 
 ### Novidades
 
+- **AppLocker já não bloqueia o Windows nem os administradores** (0.5.2): saem
+  as regras Deny de AppData\Local e Transferências, que se aplicavam também aos
+  administradores e impediam o arranque do ambiente de trabalho ao iniciar
+  sessão. Passa a permitir-se o que vem assinado pela Microsoft, Google
+  (Chrome) e Mozilla (Firefox), mesmo instalado só para o utilizador. O
+  instalador (e com ele a atualização automática) corrige sozinho os PCs que
+  já tinham as regras antigas.
+
 - **Atualização logo ao ligar o PC** (0.5.1): a tarefa `AEGN-Atualizar` corre
   30 segundos depois do arranque (antes eram 5 minutos) e também ao iniciar
   sessão; se a rede ainda não estiver pronta, tenta de novo durante 5 minutos.
