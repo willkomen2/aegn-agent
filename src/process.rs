@@ -16,6 +16,9 @@ pub struct ProcessConfig {
     pub simple: bool,
     pub uninstall_rustdesk: bool,
     pub uninstall_opencode: bool,
+    /// Limpieza de la lista negra (Roblox, Spotify, Lively, cursores...) y de
+    /// sus restos, ademas del cursor personalizado.
+    pub clean_junk: bool,
     pub apply_policies: bool,
     /// AppLocker en modo AuditOnly: registra pero no bloquea.
     pub audit_only: bool,
@@ -31,6 +34,7 @@ impl Default for ProcessConfig {
             simple: false,
             uninstall_rustdesk: true,
             uninstall_opencode: true,
+            clean_junk: true,
             apply_policies: true,
             audit_only: false,
             firewall: true,
@@ -69,6 +73,12 @@ pub fn run(cfg: &ProcessConfig) -> Result<()> {
     if cfg.uninstall_opencode {
         println!("-- Desinstalar o OpenCode --");
         audit::remove("OpenCode", cfg.apply)?;
+        println!();
+    }
+
+    if cfg.clean_junk {
+        println!("-- Limpeza: software não autorizado e restos --");
+        audit::clean(cfg.apply)?;
         println!();
     }
 

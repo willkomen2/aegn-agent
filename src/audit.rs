@@ -2,41 +2,254 @@
 //!
 //! En Windows se apoya en mecanismos legitimos:
 //! - Inventario: claves de desinstalacion del registro (`Get-ItemProperty` sobre
-//!   `...\Uninstall`), que es la misma fuente que usa "Programas y caracteristicas".
+//!   `...\Uninstall`), que es la misma fuente que usa "Programas y
+//!   caracteristicas", mas los paquetes de la Microsoft Store (`Get-AppxPackage`).
+//! - Atribucion: fecha de instalacion (InstallDate, ultima escritura de la clave
+//!   o creacion de la carpeta), usuario dueno de la clave (HKCU = sesion actual,
+//!   HKLM = instalacion de administrador) y origen (`InstallSource`).
 //! - Desinstalacion: `winget uninstall` cuando el paquete esta gestionado, con
-//!   fallback a la `UninstallString` registrada por el propio instalador.
+//!   fallback a la `UninstallString` registrada por el propio instalador, o
+//!   `Remove-AppxPackage` para la Store.
 //!
 //! Toda remocion es dry-run salvo que se pase `apply = true`.
 
+use crate::junk;
 use anyhow::Result;
 
-/// Lista el software instalado detectado en la maquina.
+/// Una entrada del inventario. Incluye lo necesario para atribuir la
+/// instalacion: cuando, con que usuario y desde que instalador.
+#[derive(Clone, Debug)]
+pub struct App {
+    /// HKLM64 / HKLM32 / HKCU / APPX.
+    pub hive: String,
+    pub name: String,
+    pub version: String,
+    pub publisher: String,
+    /// Fecha de instalacion en formato AAAA-MM-DD.
+    pub installed: String,
+    /// Tamano estimado en MB (vacio si el instalador no lo declara).
+    pub size_mb: String,
+    pub location: String,
+    pub source: String,
+    /// Comando de desinstalacion (o PackageFullName en las apps de la Store).
+    pub uninstall: String,
+    /// Quien lo instalo: el usuario de la sesion (HKCU/APPX) o "todos (admin)".
+    pub who: String,
+}
+
+/// Lista el software instalado con fecha, usuario y editor.
 pub fn list() -> Result<()> {
+    let mut apps = inventory()?;
+    if apps.is_empty() {
+        println!("[info] Nenhum programa encontrado (o inventário só existe no Windows).");
+        return Ok(());
+    }
+    apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+
+    println!(
+        "{:<6} {:<38} {:<11} {:<14} {:<20} {}",
+        "ORIGEM", "PROGRAMA", "INSTALADO", "QUEM", "EDITOR", "MB"
+    );
+    for a in &apps {
+        println!(
+            "{:<6} {:<38} {:<11} {:<14} {:<20} {}",
+            a.hive,
+            corta(&a.name, 38),
+            a.installed,
+            corta(&a.who, 14),
+            corta(&a.publisher, 20),
+            a.size_mb
+        );
+    }
+    Ok(())
+}
+
+/// Detalle de todo lo que se sabe de un programa (o de los que coincidan).
+pub fn detail(name: &str) -> Result<()> {
+    let buscado = name.to_lowercase();
+    let apps: Vec<App> = inventory()?
+        .into_iter()
+        .filter(|a| a.name.to_lowercase().contains(buscado.as_str()))
+        .collect();
+    if apps.is_empty() {
+        println!("[info] Nenhum programa corresponde a '{name}'.");
+        return Ok(());
+    }
+    for a in &apps {
+        println!("{}", a.name);
+        println!("  registo     : {}", a.hive);
+        println!("  versão      : {}", vazio(&a.version));
+        println!("  editor      : {}", vazio(&a.publisher));
+        println!("  instalado   : {}  (por {})", vazio(&a.installed), a.who);
+        println!(
+            "  tamanho     : {} MB",
+            if a.size_mb.is_empty() {
+                "?"
+            } else {
+                a.size_mb.as_str()
+            }
+        );
+        println!("  pasta       : {}", vazio(&a.location));
+        println!("  origem      : {}", vazio(&a.source));
+        println!("  desinstalar : {}", vazio(&a.uninstall));
+        println!(
+            "  motivo      : {}",
+            junk::classify(&a.name).map_or("—", |r| r.label)
+        );
+        println!();
+    }
+    Ok(())
+}
+
+/// Solo el software que incumple las reglas de la escuela.
+pub fn suspects() -> Result<()> {
+    let mut apps: Vec<App> = inventory()?.into_iter().filter(flagged_app).collect();
+    if apps.is_empty() {
+        println!("[ok] Nenhum software não autorizado conhecido está instalado.");
+        return Ok(());
+    }
+    apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+
+    println!("-- Software não autorizado conhecido --");
+    for a in &apps {
+        let motivo = junk::classify(&a.name).map_or("lista negra", |r| r.label);
+        println!(
+            "  {:<38} {:<11} {:<14} {:<6} [{}]",
+            corta(&a.name, 38),
+            a.installed,
+            corta(&a.who, 14),
+            a.hive,
+            motivo
+        );
+    }
+    println!();
+    println!("Para remover tudo: aegn auditoria limpar --aplicar");
+    Ok(())
+}
+
+/// Desinstala el software no autorizado y limpia los restos (carpetas de datos,
+/// cursores personalizados y su esquema). Dry-run salvo `apply`.
+pub fn clean(apply: bool) -> Result<()> {
+    let flagged: Vec<App> = inventory()?.into_iter().filter(flagged_app).collect();
+
+    println!("-- Software não autorizado conhecido --");
+    if flagged.is_empty() {
+        println!("[ok] Nenhum dos programas da lista negra está instalado.");
+    }
+
+    let mut failures = 0usize;
+    for a in &flagged {
+        let motivo = junk::classify(&a.name).map_or("lista negra", |r| r.label);
+        println!(
+            "  {} {}  ·  instalado {}  ·  {}{}",
+            a.name,
+            a.version,
+            vazio(&a.installed),
+            a.who,
+            if a.publisher.is_empty() {
+                String::new()
+            } else {
+                format!("  ·  {}", a.publisher)
+            }
+        );
+        println!("      motivo: {motivo}");
+        if !apply {
+            println!("      [simulação] seria desinstalado");
+            continue;
+        }
+        match remove_app(a) {
+            Ok(()) => println!("      [ok] removido"),
+            Err(e) => {
+                println!("      [erro] {e}");
+                failures += 1;
+            }
+        }
+    }
+    println!();
+
+    println!("-- Restos: pastas de dados e cursores descarregados --");
+    print!("{}", run_or_note(&cleanup_script(apply))?);
+    println!();
+
+    println!("-- Cursor personalizado: repor o esquema do Windows --");
+    print!("{}", run_or_note(&cursor_script(apply))?);
+    println!();
+
+    if !apply {
+        println!("[simulação] Execute com --aplicar para remover de facto (requer administrador).");
+    } else if failures > 0 {
+        anyhow::bail!("{failures} programa(s) não puderam ser removidos; veja a saída acima.");
+    }
+    Ok(())
+}
+
+/// Rastro de una instalacion: instaladores descargados, eventos del registro de
+/// Windows (con la cuenta que los lanzo) y programas de arranque automatico.
+/// Es la parte que permite saber quien instalo que.
+pub fn evidence() -> Result<()> {
+    print!("{}", run_or_note(EVIDENCE)?);
+    Ok(())
+}
+
+/// true si el programa incumple una regla y no esta en la lista blanca.
+fn flagged_app(app: &App) -> bool {
+    junk::classify(&app.name).is_some() && !junk::kept(&app.name, &app.publisher)
+}
+
+/// Inventario completo (registro + Microsoft Store). Vacio fuera de Windows.
+pub fn inventory() -> Result<Vec<App>> {
     #[cfg(windows)]
     {
-        // Consulta las tres ubicaciones habituales del registro (64-bit, 32-bit y
-        // por-usuario) y emite nombre + version + publisher.
-        let ps = r#"
-$paths = @(
-  'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
-  'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*',
-  'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*'
-)
-Get-ItemProperty $paths -ErrorAction SilentlyContinue |
-  Where-Object { $_.DisplayName } |
-  Select-Object DisplayName, DisplayVersion, Publisher |
-  Sort-Object DisplayName |
-  Format-Table -AutoSize
-"#;
-        print!("{}", crate::ps::run(ps)?);
-        Ok(())
+        Ok(parse_inventory(&crate::ps::run(INVENTORY)?))
     }
 
     #[cfg(not(windows))]
     {
-        println!("[info] O inventário de software só está disponível no Windows.");
-        println!("[info] No computador executaria: Get-ItemProperty sobre as chaves Uninstall do registo.");
-        Ok(())
+        Ok(Vec::new())
+    }
+}
+
+/// Interpreta la salida tabulada del script de inventario. Es puro, para poder
+/// probarlo en cualquier plataforma.
+fn parse_inventory(text: &str) -> Vec<App> {
+    text.lines()
+        .filter_map(|line| {
+            let f: Vec<&str> = line.split('\t').collect();
+            if f.len() < 10 {
+                return None;
+            }
+            Some(App {
+                hive: f[0].to_string(),
+                name: f[1].to_string(),
+                version: f[2].to_string(),
+                publisher: f[3].to_string(),
+                installed: f[4].to_string(),
+                size_mb: f[5].to_string(),
+                location: f[6].to_string(),
+                source: f[7].to_string(),
+                uninstall: f[8].to_string(),
+                who: f[9].to_string(),
+            })
+        })
+        .collect()
+}
+
+/// Recorta por caracteres (no por bytes) para no romper los acentos.
+fn corta(s: &str, n: usize) -> String {
+    if s.chars().count() <= n {
+        return s.to_string();
+    }
+    let mut out: String = s.chars().take(n.saturating_sub(1)).collect();
+    out.push('…');
+    out
+}
+
+/// Texto para un campo vacio.
+fn vazio(s: &str) -> &str {
+    if s.is_empty() {
+        "—"
+    } else {
+        s
     }
 }
 
@@ -127,6 +340,289 @@ pub fn remove(name: &str, apply: bool) -> Result<()> {
     }
 }
 
+/// Desinstala una entrada del inventario segun su origen: Store o registro.
+#[cfg(windows)]
+fn remove_app(app: &App) -> Result<()> {
+    if app.hive == "APPX" {
+        // En la Store no manda winget: se quita el paquete del usuario.
+        let salida = crate::ps::run(&appx_uninstall_script(&app.uninstall))?;
+        print!("{salida}");
+        return Ok(());
+    }
+
+    let winget = std::process::Command::new("winget")
+        .args([
+            "uninstall",
+            "--name",
+            app.name.as_str(),
+            "--silent",
+            "--accept-source-agreements",
+            "--disable-interactivity",
+        ])
+        .status();
+    if matches!(winget, Ok(s) if s.success()) {
+        return Ok(());
+    }
+
+    let salida = crate::ps::run(&uninstall_script(&app.name, true))?;
+    print!("{salida}");
+    Ok(())
+}
+
+/// Fuera de Windows no hay nada que desinstalar (el inventario viene vacio).
+#[cfg(not(windows))]
+fn remove_app(_app: &App) -> Result<()> {
+    Ok(())
+}
+
+/// Ejecuta un script de PowerShell, o avisa de que solo existe en Windows.
+#[cfg(windows)]
+fn run_or_note(script: &str) -> Result<String> {
+    crate::ps::run(script)
+}
+
+#[cfg(not(windows))]
+fn run_or_note(_script: &str) -> Result<String> {
+    Ok("[info] Esta operação só está disponível no Windows.\n".to_string())
+}
+
+/// Script de inventario: emite una linea por programa, campos separados por
+/// tabulador (el orden lo fija `parse_inventory`).
+#[cfg(windows)]
+const INVENTORY: &str = r#"
+$ErrorActionPreference = 'SilentlyContinue'
+$WarningPreference = 'SilentlyContinue'
+
+function Limpa([string] $s) {
+  if ($null -eq $s) { return '' }
+  return (($s -replace "[`t`r`n]", ' ').Trim())
+}
+
+$hives = @(
+  @{ Hive = 'HKLM64'; Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall' },
+  @{ Hive = 'HKLM32'; Path = 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall' },
+  @{ Hive = 'HKCU';   Path = 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall' }
+)
+
+foreach ($h in $hives) {
+  foreach ($k in @(Get-ChildItem $h.Path)) {
+    $v = Get-ItemProperty $k.PSPath
+    if (-not $v.DisplayName) { continue }
+
+    # Data: InstallDate (AAAAMMDD); se falta, a ultima escrita da chave; e por
+    # ultimo a criacao da pasta. Nas chaves HKCU o LastWriteTime vem vazio.
+    $data = ''
+    if ($v.InstallDate -match '^(\d{4})(\d{2})(\d{2})') {
+      $data = "$($Matches[1])-$($Matches[2])-$($Matches[3])"
+    }
+    if (-not $data -and $k.LastWriteTime) {
+      $data = $k.LastWriteTime.ToString('yyyy-MM-dd')
+    }
+    if (-not $data -and $v.InstallLocation -and (Test-Path -LiteralPath $v.InstallLocation)) {
+      $data = (Get-Item -LiteralPath $v.InstallLocation).CreationTime.ToString('yyyy-MM-dd')
+    }
+
+    $tam = ''
+    if ($v.EstimatedSize) { $tam = [string][math]::Round($v.EstimatedSize / 1024, 1) }
+
+    # HKCU solo lo escribe el utilizador de la sesion; HKLM exige admin.
+    $quem = 'todos (admin)'
+    if ($h.Hive -eq 'HKCU') { $quem = $env:USERNAME }
+
+    $un = $v.QuietUninstallString
+    if (-not $un) { $un = $v.UninstallString }
+
+    @(
+      $h.Hive,
+      (Limpa $v.DisplayName),
+      (Limpa $v.DisplayVersion),
+      (Limpa $v.Publisher),
+      $data,
+      $tam,
+      (Limpa $v.InstallLocation),
+      (Limpa $v.InstallSource),
+      (Limpa $un),
+      (Limpa $quem)
+    ) -join "`t"
+  }
+}
+
+# Apps de la Microsoft Store (Spotify, Lively, cursores...). Los componentes
+# del sistema viven en C:\Windows; las apps instaladas, en WindowsApps. Se
+# excluyen tambien las librerias compartidas y las apps de Microsoft
+# (PublisherId 8wekyb3d8bbwe = Windows/Office), que son parte del sistema.
+foreach ($a in @(Get-AppxPackage)) {
+  if ($a.InstallLocation -like "$env:SystemRoot\*") { continue }
+  if ($a.PublisherId -eq '8wekyb3d8bbwe') { continue }
+  if ($a.Name -like 'MicrosoftWindows.*' -or $a.Name -like 'windows.*') { continue }
+  if ($a.Name -like '*.VCLibs' -or $a.Name -like '*WindowsAppRuntime*' -or $a.Name -like '*WinAppRuntime*') { continue }
+  $data = ''
+  if ($a.InstallLocation -and (Test-Path -LiteralPath $a.InstallLocation)) {
+    $data = (Get-Item -LiteralPath $a.InstallLocation).CreationTime.ToString('yyyy-MM-dd')
+  }
+  @(
+    'APPX',
+    (Limpa $a.Name),
+    (Limpa $a.Version),
+    (Limpa $a.PublisherDisplayName),
+    $data,
+    '',
+    (Limpa $a.InstallLocation),
+    'Microsoft Store',
+    (Limpa $a.PackageFullName),
+    (Limpa $env:USERNAME)
+  ) -join "`t"
+}
+"#;
+
+/// Script que quita un paquete de la Store por su PackageFullName.
+#[cfg(windows)]
+fn appx_uninstall_script(nome: &str) -> String {
+    let mut s = String::from("$nome = '");
+    s.push_str(&nome.replace('\'', "''"));
+    s.push_str("'\n");
+    s.push_str(
+        r#"$p = @(Get-AppxPackage | Where-Object { $_.PackageFullName -eq $nome -or $_.Name -eq $nome })
+if ($p.Count -eq 0) { Write-Output 'NAO_ENCONTRADO'; exit 0 }
+foreach ($x in $p) {
+  Write-Output ('REMOVER=' + $x.PackageFullName)
+  Remove-AppxPackage -Package $x.PackageFullName -ErrorAction Stop
+  Write-Output '  OK'
+}
+"#,
+    );
+    s
+}
+
+/// Script que borra los restos: carpetas de datos de las apps de la lista negra
+/// y los cursores descargados. No toca nada mas.
+fn cleanup_script(apply: bool) -> String {
+    let mut s = String::from("$apply = ");
+    s.push_str(if apply { "$true" } else { "$false" });
+    s.push_str("\n$ErrorActionPreference = 'SilentlyContinue'\n");
+    s.push_str(
+        r#"$alvos = @(
+  "$env:LOCALAPPDATA\Roblox",
+  "$env:APPDATA\Spotify",
+  "$env:LOCALAPPDATA\Spotify",
+  "$env:LOCALAPPDATA\Lively Wallpaper",
+  "$env:APPDATA\Lively Wallpaper",
+  "$env:APPDATA\RustDesk",
+  "$env:LOCALAPPDATA\RustDesk"
+)
+$alvos += @(Get-ChildItem "$env:LOCALAPPDATA\Packages" -Directory |
+  Where-Object { $_.Name -match 'SpotifyAB|LivelyWallpaper|CustomCursors' } |
+  ForEach-Object { $_.FullName })
+
+foreach ($a in $alvos) {
+  if (Test-Path -LiteralPath $a) {
+    Write-Output ("REMOVER=" + $a)
+    if ($apply) { Remove-Item -LiteralPath $a -Recurse -Force }
+  }
+}
+
+# Cursores personalizados que se descargan a Transferencias.
+Get-ChildItem (Join-Path $env:USERPROFILE 'Downloads') -File |
+  Where-Object { $_.Extension -in '.ani', '.cur' -or $_.Name -match 'cursor' } |
+  ForEach-Object {
+    Write-Output ("REMOVER=" + $_.FullName)
+    if ($apply) { Remove-Item -LiteralPath $_.FullName -Force }
+  }
+"#,
+    );
+    s
+}
+
+/// Script que devuelve el esquema de punteros al de Windows (los ficheros
+/// `*_eoa.cur` del perfil son los predefinidos de Windows 10/11).
+fn cursor_script(apply: bool) -> String {
+    let mut s = String::from("$apply = ");
+    s.push_str(if apply { "$true" } else { "$false" });
+    s.push_str("\n$ErrorActionPreference = 'SilentlyContinue'\n");
+    s.push_str(
+        r#"$k = 'HKCU:\Control Panel\Cursors'
+$base = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Cursors'
+$mapa = @{
+  'Arrow'       = 'arrow_eoa.cur'
+  'Help'        = 'helpsel_eoa.cur'
+  'AppStarting' = 'busy_eoa.cur'
+  'Wait'        = 'wait_eoa.cur'
+  'Crosshair'   = 'cross_eoa.cur'
+  'IBeam'       = 'ibeam_eoa.cur'
+  'NWPen'       = 'pen_eoa.cur'
+  'No'          = 'unavail_eoa.cur'
+  'SizeNS'      = 'ns_eoa.cur'
+  'SizeWE'      = 'ew_eoa.cur'
+  'SizeNWSE'    = 'nwse_eoa.cur'
+  'SizeNESW'    = 'nesw_eoa.cur'
+  'SizeAll'     = 'move_eoa.cur'
+  'UpArrow'     = 'up_eoa.cur'
+  'Hand'        = 'link_eoa.cur'
+  'Pin'         = 'pin_eoa.cur'
+  'Person'      = 'person_eoa.cur'
+}
+$alterado = $false
+foreach ($n in $mapa.Keys) {
+  $atual = (Get-ItemProperty $k).$n
+  if ($atual -and $atual -notlike (Join-Path $base '*')) { $alterado = $true }
+}
+if (-not $alterado) {
+  Write-Output '[ok] O cursor já é o predefinido do Windows.'
+  exit 0
+}
+Write-Output 'CURSOR=Windows Aero (predefinido)'
+if (-not $apply) { exit 0 }
+Set-ItemProperty -Path $k -Name '(default)' -Value 'Windows Aero'
+foreach ($n in $mapa.Keys) {
+  Set-ItemProperty -Path $k -Name $n -Value (Join-Path $base $mapa[$n])
+}
+# Aplica sem terminar a sessao.
+rundll32.exe user32.dll,UpdatePerUserSystemParameters
+Write-Output '  [ok] cursor reposto'
+"#,
+    );
+    s
+}
+
+/// Rastro de instalacion: instaladores, eventos del sistema y arranque.
+const EVIDENCE: &str = r#"
+$ErrorActionPreference = 'SilentlyContinue'
+
+Write-Output '-- Instaladores descarregados (Transferências) --'
+Get-ChildItem (Join-Path $env:USERPROFILE 'Downloads') -File |
+  Where-Object { $_.Name -match 'roblox|spotify|lively|cursor|rustdesk|anydesk|teamviewer|steam|epic|tlauncher' } |
+  Sort-Object CreationTime |
+  ForEach-Object { "  {0:yyyy-MM-dd HH:mm}  {1}" -f $_.CreationTime, $_.Name }
+
+Write-Output ''
+Write-Output '-- Instalações registadas pelo Windows (quem) --'
+Get-WinEvent -FilterHashtable @{ LogName = 'Application'; ProviderName = 'MsiInstaller'; Id = 11707 } -MaxEvents 60 |
+  ForEach-Object {
+    $linha = ($_.Message -split "`r?`n")[0]
+    $utilizador = ''
+    try {
+      if ($_.UserId) {
+        $utilizador = (New-Object Security.Principal.SecurityIdentifier($_.UserId)).Translate([Security.Principal.NTAccount]).Value
+      }
+    } catch { }
+    "  {0:yyyy-MM-dd HH:mm}  {1}  {2}" -f $_.TimeCreated, $utilizador, $linha
+  }
+
+Write-Output ''
+Write-Output '-- Arranque automático --'
+foreach ($rk in @(
+  'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run',
+  'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run',
+  'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run'
+)) {
+  $p = Get-ItemProperty $rk
+  if (-not $p) { continue }
+  $p.PSObject.Properties | Where-Object { $_.Name -notlike 'PS*' } | ForEach-Object {
+    "  {0}  {1} = {2}" -f $rk.Split('\')[0], $_.Name, $_.Value
+  }
+}
+"#;
+
 /// Script que localiza en el registro los programas cuyo DisplayName contiene
 /// `name` y, si `apply`, ejecuta su desinstalador. No encontrar nada no es un
 /// error (el equipo ya esta limpio); un desinstalador que falla si lo es.
@@ -170,4 +666,33 @@ if ($failed) {{ exit 1 }}
         name = name.replace('\'', "''"),
         apply = if apply { "true" } else { "false" },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn interpreta_el_inventario_tabulado() {
+        let texto = "HKCU\tRoblox Player for Aluno(a)\t1.0\tRoblox Corporation\t2026-10-22\t120.5\tC:\\Roblox\tC:\\Descargas\\setup.exe\t\"C:\\Roblox\\Installer.exe\" -uninstall\tAluno(a)\nAPPX\tSpotifyAB.SpotifyMusic\t1.306\tSpotify AB\t2026-10-27\t\tC:\\Apps\\Spotify\tMicrosoft Store\tSpotifyAB.SpotifyMusic_1.0_x64__zpd\tAluno(a)\n";
+        let apps = parse_inventory(texto);
+        assert_eq!(apps.len(), 2);
+        assert_eq!(apps[0].hive, "HKCU");
+        assert_eq!(apps[0].name, "Roblox Player for Aluno(a)");
+        assert_eq!(apps[0].installed, "2026-10-22");
+        assert_eq!(apps[0].who, "Aluno(a)");
+        assert_eq!(apps[1].hive, "APPX");
+        assert_eq!(apps[1].source, "Microsoft Store");
+    }
+
+    #[test]
+    fn ignora_lineas_incompletas() {
+        assert!(parse_inventory("basura\n\nHKCU\tsolo-dos-campos").is_empty());
+    }
+
+    #[test]
+    fn recorta_sin_romper_acentos() {
+        assert_eq!(corta("Roblox", 10), "Roblox");
+        assert_eq!(corta("Controlador gráfico", 6), "Contr…");
+    }
 }
