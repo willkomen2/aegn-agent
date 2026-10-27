@@ -46,6 +46,7 @@ jobs:
           Compress-Archive -Path pkg/* -DestinationPath "dist/AEGN-Security-$v-windows.zip"
           Copy-Item target/release/aegn.exe dist/
           Copy-Item installer/instalar.ps1 dist/
+          Remove-Item dist/*.wixpdb
           Get-ChildItem dist -File | ForEach-Object {
             "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name
           } | Set-Content dist/SHA256SUMS.txt -Encoding ascii
