@@ -10,7 +10,9 @@
 //! - Desinstalacion, para cada coincidencia por nombre:
 //!   - instalacion de maquina: su `UninstallString` en modo silencioso;
 //!   - instalacion por usuario (Roblox, Spotify...): se recorren todos los
-//!     perfiles (cargando el NTUSER.DAT de los que no tienen sesion) y se borra
+//!     perfiles con la sesion abierta (nunca se carga el NTUSER.DAT de los
+//!     demas: si la descarga falla, Windows no puede abrir ese perfil y el
+//!     inicio de sesion se congela) y se borra
 //!     la carpeta de AppData del programa y su clave, porque su desinstalador
 //!     correria en el perfil del administrador y no en el del alumno;
 //!   - app de la Store: `Remove-AppxPackage -AllUsers`;
@@ -239,7 +241,7 @@ pub fn clean(apply: bool) -> Result<()> {
     Ok(())
 }
 
-/// Busca `APPS` en todos los perfiles (con o sin sesion) y en la Store, y los
+/// Busca `APPS` en los perfiles con sesion abierta y en la Store, y los
 /// quita si `apply`. Devuelve cuantos programas fallaron.
 #[cfg(windows)]
 fn clean_all_profiles(apply: bool) -> Result<usize> {
@@ -626,6 +628,11 @@ if (-not $alterado) {
   Write-Output '[ok] O cursor já é o predefinido do Windows.'
   exit 0
 }
+# Sin los ficheros del esquema no se toca nada: el puntero quedaria invisible.
+if (-not (Test-Path (Join-Path $base 'arrow_eoa.cur'))) {
+  Write-Output '[aviso] Não se encontraram os cursores do Windows; não se altera nada.'
+  exit 0
+}
 Write-Output 'CURSOR=Windows Aero (predefinido)'
 if (-not $apply) { exit 0 }
 Set-ItemProperty -Path $k -Name '(default)' -Value 'Windows Aero'
@@ -777,63 +784,49 @@ foreach ($app in $maquina) {
 }
 
 # --- Instalaciones por usuario, en todos los perfiles ----------------------
-$carregados = @()
-try {
-  $perfis = Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList' |
-    Where-Object { $_.PSChildName -like 'S-1-5-21-*' }
-  foreach ($pf in $perfis) {
-    $sid = $pf.PSChildName
-    $perfilDir = (Get-ItemProperty $pf.PSPath).ProfileImagePath
-    $perfil = Split-Path $perfilDir -Leaf
-    $raiz = "Registry::HKEY_USERS\$sid"
-    if (-not (Test-Path $raiz)) {
-      # Perfil sin sesion abierta: se carga su NTUSER.DAT el tiempo justo.
-      $dat = Join-Path $perfilDir 'NTUSER.DAT'
-      if (-not (Test-Path $dat)) { continue }
-      $tmp = 'AEGN_' + $sid
-      & reg.exe load "HKU\$tmp" "$dat" 2>&1 | Out-Null
-      if ($LASTEXITCODE -ne 0) { Write-Output "  [aviso] Não foi possível abrir o perfil $perfil."; continue }
-      $carregados += $tmp
-      $raiz = "Registry::HKEY_USERS\$tmp"
+# Solo perfiles con la sesion abierta (su hive ya esta en HKEY_USERS). Cargar
+# el NTUSER.DAT de los demas con reg load congelaba el inicio de sesion.
+$perfis = Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList' |
+  Where-Object { $_.PSChildName -like 'S-1-5-21-*' }
+foreach ($pf in $perfis) {
+  $sid = $pf.PSChildName
+  $perfilDir = (Get-ItemProperty $pf.PSPath).ProfileImagePath
+  $perfil = Split-Path $perfilDir -Leaf
+  $raiz = "Registry::HKEY_USERS\$sid"
+  if (-not (Test-Path $raiz)) { continue }
+  $apps = @(Get-ItemProperty "$raiz\$uninst\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like "*$name*" })
+  foreach ($app in $apps) {
+    $script:found++
+    Write-Output ("ALVO=" + $app.DisplayName + " " + $app.DisplayVersion + "  (perfil " + $perfil + ")")
+    $pasta = Pasta-App $app $perfilDir
+    if (-not $pasta) {
+      Write-Output '  SEM_PASTA: não se encontrou a pasta do programa em AppData.'
+      $script:failed = $true
+      Historico $app.DisplayName $app.DisplayVersion $perfil 'apagar pasta' 'falhou (sem pasta)'
+      continue
     }
-    $apps = @(Get-ItemProperty "$raiz\$uninst\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like "*$name*" })
-    foreach ($app in $apps) {
-      $script:found++
-      Write-Output ("ALVO=" + $app.DisplayName + " " + $app.DisplayVersion + "  (perfil " + $perfil + ")")
-      $pasta = Pasta-App $app $perfilDir
-      if (-not $pasta) {
-        Write-Output '  SEM_PASTA: não se encontrou a pasta do programa em AppData.'
-        $script:failed = $true
-        Historico $app.DisplayName $app.DisplayVersion $perfil 'apagar pasta' 'falhou (sem pasta)'
-        continue
-      }
-      Write-Output ("  APAGAR=" + $pasta)
-      if (-not $apply) { continue }
-      Get-Process -ErrorAction SilentlyContinue |
-        Where-Object { $_.Path -and $_.Path.StartsWith($pasta + '\', [StringComparison]::OrdinalIgnoreCase) } |
-        Stop-Process -Force -ErrorAction SilentlyContinue
-      Start-Sleep -Milliseconds 500
-      Remove-Item -LiteralPath $pasta -Recurse -Force -ErrorAction SilentlyContinue
-      if (Test-Path -LiteralPath $pasta) {
-        Write-Output '  [erro] A pasta não pôde ser apagada por completo.'
-        $script:failed = $true
-        Historico $app.DisplayName $app.DisplayVersion $perfil 'apagar pasta' 'falhou'
-      } else {
-        Remove-Item -LiteralPath $app.PSPath -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Output '  [ok] Removido.'
-        Historico $app.DisplayName $app.DisplayVersion $perfil 'apagar pasta' 'ok'
-      }
+    Write-Output ("  APAGAR=" + $pasta)
+    if (-not $apply) { continue }
+    Get-Process -ErrorAction SilentlyContinue |
+      Where-Object { $_.Path -and $_.Path.StartsWith($pasta + '\', [StringComparison]::OrdinalIgnoreCase) } |
+      Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Milliseconds 500
+    Remove-Item -LiteralPath $pasta -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $pasta) {
+      Write-Output '  [erro] A pasta não pôde ser apagada por completo.'
+      $script:failed = $true
+      Historico $app.DisplayName $app.DisplayVersion $perfil 'apagar pasta' 'falhou'
+    } else {
+      Remove-Item -LiteralPath $app.PSPath -Recurse -Force -ErrorAction SilentlyContinue
+      Write-Output '  [ok] Removido.'
+      Historico $app.DisplayName $app.DisplayVersion $perfil 'apagar pasta' 'ok'
     }
   }
-} finally {
-  # Sin soltar las referencias, reg unload falla con "acceso denegado".
-  [gc]::Collect(); [gc]::WaitForPendingFinalizers()
-  foreach ($h in $carregados) { & reg.exe unload "HKU\$h" 2>&1 | Out-Null }
 }
 
 # --- Apps de la Microsoft Store --------------------------------------------
 $appxName = $name -replace '\s', ''
-$pkgs = @(Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*$appxName*" })
+$pkgs = @(Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*$appxName*" -and $_.Name -notlike 'Microsoft.*' -and $_.Name -notlike 'MicrosoftWindows.*' -and -not $_.IsFramework -and $_.SignatureKind -ne 'System' })
 foreach ($p in $pkgs) {
   $script:found++
   Write-Output ("ALVO=" + $p.Name + " " + $p.Version + "  (Microsoft Store)")

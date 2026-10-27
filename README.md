@@ -246,7 +246,7 @@ Em Windows, à mão:
 ```powershell
 cargo build --release
 dotnet tool install --global wix --version 5.0.2
-wix build installer\aegn.wxs -arch x64 -d Version=0.7.0 -d ExePath=target\release\aegn.exe -o AEGN-Security-0.7.0-x64.msi
+wix build installer\aegn.wxs -arch x64 -d Version=0.7.1 -d ExePath=target\release\aegn.exe -o AEGN-Security-0.7.1-x64.msi
 ```
 
 Em Linux pode verificar-se que o código de Windows compila (sem ligar):

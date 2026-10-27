@@ -16,14 +16,22 @@
     3. confirma o SHA-256 e instala-o em silêncio com o msiexec.
   O registo fica em C:\Program Files\AEGN\logs\atualizacao.log.
 
+  Antes de descarregar nada, descarrega os perfis de utilizador que versões
+  antigas do aegn deixaram montados em HKEY_USERS\AEGN_* (impedem o Windows de
+  carregar o perfil ao iniciar sessão).
+
   Qualquer utilizador pode pedir uma atualização imediata com
   "aegn atualizar --aplicar": isso só lança a tarefa, que instala sempre o
   release oficial do repositório.
 
 .PARAMETER Registar
   Regista (ou atualiza) a tarefa AEGN-Atualizar. O MSI chama-o ao instalar.
+
+.PARAMETER Reparar
+  Só descarrega os perfis que versões antigas do aegn deixaram montados em
+  HKEY_USERS\AEGN_* e termina (código 0), sem atualizar. O MSI chama-o ao instalar.
 #>
-param([switch]$Registar)
+param([switch]$Registar, [switch]$Reparar)
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -74,7 +82,33 @@ function Anotar([string]$Texto) {
     Write-Output $Texto
 }
 
+# Versões antigas montavam NTUSER.DAT em HKU\AEGN_<sid> e por vezes não o
+# descarregavam: o Windows deixava então de poder carregar o perfil ao iniciar
+# sessão. Aqui descarregam-se, com algumas tentativas (o handle pode demorar).
+function Soltar-Perfis {
+    $nomes = @(Get-ChildItem Registry::HKEY_USERS -ErrorAction SilentlyContinue |
+        ForEach-Object { $_.PSChildName } | Where-Object { $_ -like 'AEGN_*' })
+    foreach ($nome in $nomes) {
+        $ok = $false
+        for ($i = 1; $i -le 5 -and -not $ok; $i++) {
+            [gc]::Collect(); [gc]::WaitForPendingFinalizers()
+            $saida = & reg.exe unload "HKU\$nome" 2>&1 | Out-String
+            if ($LASTEXITCODE -eq 0) { $ok = $true }
+            elseif ($i -lt 5) { Start-Sleep -Seconds 3 }
+            else { $fim = $saida.Trim() }
+        }
+        if ($ok) { Anotar "[ok] Perfil $nome descarregado." }
+        else { Anotar "[aviso] Não foi possível descarregar $nome após 5 tentativas: $fim" }
+    }
+}
+
+if ($Reparar) {
+    try { Soltar-Perfis } catch { Anotar "[aviso] Soltar-Perfis falhou: $($_.Exception.Message)" }
+    exit 0
+}
+
 try {
+    try { Soltar-Perfis } catch { Anotar "[aviso] Soltar-Perfis falhou: $($_.Exception.Message)" }
     # O PowerShell 5.1 pode não ter o TLS 1.2 ativo, e o GitHub exige-o.
     [Net.ServicePointManager]::SecurityProtocol =
         [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12

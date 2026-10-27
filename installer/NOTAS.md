@@ -14,6 +14,12 @@ caso a senha fica `admin` até a alterar com `aegn senha alterar`.
 
 ### Novidades
 
+- **Correção urgente: sessão congelada ao iniciar** (0.7.1): a limpeza deixa
+  de montar o NTUSER.DAT dos perfis sem sessão (se não o desmontava, o Windows
+  não conseguia abrir o perfil e o ambiente de trabalho ficava congelado, em
+  alunos e administradores). O instalador e a atualização desmontam os que
+  versões anteriores deixaram em HKEY_USERS\AEGN_*.
+
 - **AppLocker passa a lista negra** (0.7.0): já nada fica bloqueado ao
   iniciar sessão. Tudo se executa, exceto, nas contas de aluno, o RustDesk,
   AnyDesk, TeamViewer, Roblox, Steam e Battle.net (negados pela assinatura,

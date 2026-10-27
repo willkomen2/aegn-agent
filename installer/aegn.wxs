@@ -16,7 +16,7 @@
     "aegn reverter" com a opção aplicar antes de desinstalar (o desinstalar.cmd faz isso).
 
   Compilar (Windows):
-    wix build installer\aegn.wxs -arch x64 -d Version=0.7.0 -d ExePath=target\release\aegn.exe -o AEGN-Security.msi
+    wix build installer\aegn.wxs -arch x64 -d Version=0.7.1 -d ExePath=target\release\aegn.exe -o AEGN-Security.msi
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="AEGN Security"
@@ -79,6 +79,15 @@
                   Impersonate="no"
                   Return="ignore" />
 
+    <!-- Instalação e atualização: descarrega perfis HKU\AEGN_* que versões antigas
+         deixaram montados (bloqueavam o início de sessão). -->
+    <CustomAction Id="RepararPerfis"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]atualizar.ps1&quot; -Reparar"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
     <!-- Instalação e atualização: regista a tarefa de atualização automática. -->
     <CustomAction Id="RegistarAtualizacao"
                   Directory="INSTALLFOLDER"
@@ -119,7 +128,9 @@
               Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
       <Custom Action="RetirarNavegador" Before="RemoveFiles"
               Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
-      <Custom Action="RegistarAtualizacao" After="InstallFiles"
+      <Custom Action="RepararPerfis" After="InstallFiles"
+              Condition="NOT REMOVE=&quot;ALL&quot;" />
+      <Custom Action="RegistarAtualizacao" After="RepararPerfis"
               Condition="NOT REMOVE=&quot;ALL&quot;" />
       <Custom Action="AplicarNavegador" After="RegistarAtualizacao"
               Condition="NOT REMOVE=&quot;ALL&quot;" />
