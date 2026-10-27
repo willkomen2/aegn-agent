@@ -15,6 +15,8 @@ mod audit;
 mod github;
 mod policy;
 mod process;
+#[cfg(windows)]
+mod ps;
 mod tui;
 
 use anyhow::Result;

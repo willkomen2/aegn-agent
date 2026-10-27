@@ -32,7 +32,14 @@ como material de estudio.
 - **Privilegios**: las operaciones de sistema requieren consola de
   administrador en Windows.
 - **Restricción de ejecución**: se implementa con reglas de ruta de AppLocker,
-  el método soportado por Microsoft para control de aplicaciones.
+  el método soportado por Microsoft para control de aplicaciones. Con la
+  colección Exe activa, todo lo que no esté permitido queda bloqueado: solo se
+  permite `%WINDIR%` y `%PROGRAMFILES%` a todos, y cualquier ruta a los
+  administradores. Los Deny de AppData\Local y Downloads aplican también a los
+  administradores, así que `aegn.exe` debe vivir fuera de esas carpetas (por
+  ejemplo en `C:\Program Files\aegn\`).
+- **Reversible**: `enforce` y `revert` solo tocan las reglas cuyo nombre empieza
+  por `AEGN-Deny-UserFolders`; el resto de la política local se conserva.
 
 ## Compilar
 
@@ -41,6 +48,13 @@ cargo build --release
 ```
 
 El binario queda en `target/release/aegn`.
+
+Desde Linux se puede comprobar que el código de Windows compila (sin enlazar):
+
+```bash
+scripts/check-windows.sh          # cargo check
+scripts/check-windows.sh clippy   # cargo clippy
+```
 
 ## Instalar en el PATH (Windows)
 

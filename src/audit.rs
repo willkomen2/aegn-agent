@@ -9,8 +9,6 @@
 //! Toda remocion es dry-run salvo que se pase `apply = true`.
 
 use anyhow::Result;
-#[cfg(windows)]
-use anyhow::Context;
 
 /// Lista el software instalado detectado en la maquina.
 pub fn list() -> Result<()> {
@@ -30,8 +28,7 @@ Get-ItemProperty $paths -ErrorAction SilentlyContinue |
   Sort-Object DisplayName |
   Format-Table -AutoSize
 "#;
-        let output = run_powershell(ps)?;
-        println!("{output}");
+        print!("{}", crate::ps::run(ps)?);
         Ok(())
     }
 
@@ -44,15 +41,19 @@ Get-ItemProperty $paths -ErrorAction SilentlyContinue |
 }
 
 /// Desinstala un programa no autorizado por nombre. Dry-run salvo `apply`.
+///
+/// En Windows el dry-run tambien busca en el registro, para mostrar que
+/// programas coinciden y que comando se ejecutaria con `--apply`.
 pub fn remove(name: &str, apply: bool) -> Result<()> {
-    if !apply {
-        println!("[dry-run] Se desinstalaria el software que coincida con: '{name}'");
-        println!("[dry-run] Ejecuta con --apply para desinstalar de verdad (requiere admin).");
-        return Ok(());
-    }
-
     #[cfg(windows)]
     {
+        if !apply {
+            println!("[dry-run] Buscando software que coincida con: '{name}'");
+            print!("{}", crate::ps::run(&uninstall_script(name, false))?);
+            println!("[dry-run] Ejecuta con --apply para desinstalar de verdad (requiere admin).");
+            return Ok(());
+        }
+
         println!("[accion] Intentando desinstalar '{name}' via winget...");
         // winget maneja la mayoria del software moderno de forma silenciosa.
         let winget = std::process::Command::new("winget")
@@ -76,53 +77,64 @@ pub fn remove(name: &str, apply: bool) -> Result<()> {
             }
         }
 
-        // Fallback: recuperar la UninstallString registrada por el instalador.
-        let ps = format!(
-            r#"
-$name = '{}'
-$paths = @(
-  'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
-  'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*',
-  'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*'
-)
-$app = Get-ItemProperty $paths -ErrorAction SilentlyContinue |
-  Where-Object {{ $_.DisplayName -like "*$name*" }} | Select-Object -First 1
-if (-not $app) {{ Write-Output 'NOT_FOUND'; exit 1 }}
-Write-Output ("TARGET=" + $app.DisplayName)
-$cmd = $app.QuietUninstallString
-if (-not $cmd) {{ $cmd = $app.UninstallString }}
-if (-not $cmd) {{ Write-Output 'NO_UNINSTALL_STRING'; exit 1 }}
-Write-Output ("CMD=" + $cmd)
-Start-Process -FilePath "cmd.exe" -ArgumentList "/c", $cmd -Wait -NoNewWindow
-"#,
-            name.replace('\'', "''")
-        );
-        let output = run_powershell(&ps)?;
-        println!("{output}");
+        // Fallback: la UninstallString registrada por el propio instalador.
+        print!("{}", crate::ps::run(&uninstall_script(name, true))?);
         Ok(())
     }
 
     #[cfg(not(windows))]
     {
-        let _ = apply;
-        println!("[info] La desinstalacion solo esta disponible en Windows ('{name}').");
+        if !apply {
+            println!("[dry-run] Se desinstalaria el software que coincida con: '{name}'");
+            println!("[dry-run] Ejecuta con --apply para desinstalar de verdad (requiere admin).");
+        } else {
+            println!("[info] La desinstalacion solo esta disponible en Windows ('{name}').");
+        }
         Ok(())
     }
 }
 
-/// Ejecuta un script de PowerShell y devuelve su salida combinada.
+/// Script que localiza en el registro los programas cuyo DisplayName contiene
+/// `name` y, si `apply`, ejecuta su desinstalador. No encontrar nada no es un
+/// error (el equipo ya esta limpio); un desinstalador que falla si lo es.
 #[cfg(windows)]
-fn run_powershell(script: &str) -> Result<String> {
-    let output = std::process::Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", script])
-        .output()
-        .context("no se pudo invocar powershell")?;
-
-    let mut combined = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    if !stderr.trim().is_empty() {
-        combined.push_str("\n[stderr] ");
-        combined.push_str(&stderr);
-    }
-    Ok(combined)
+fn uninstall_script(name: &str, apply: bool) -> String {
+    format!(
+        r#"
+$name = '{name}'
+$apply = ${apply}
+$paths = @(
+  'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
+  'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*',
+  'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*'
+)
+$apps = @(Get-ItemProperty $paths -ErrorAction SilentlyContinue |
+  Where-Object {{ $_.DisplayName -like "*$name*" }})
+if ($apps.Count -eq 0) {{ Write-Output "NOT_FOUND: ningun programa coincide con '$name'."; exit 0 }}
+$failed = $false
+foreach ($app in $apps) {{
+  Write-Output ("TARGET=" + $app.DisplayName + " " + $app.DisplayVersion)
+  $cmd = $app.QuietUninstallString
+  if (-not $cmd) {{ $cmd = $app.UninstallString }}
+  if (-not $cmd) {{ Write-Output '  NO_UNINSTALL_STRING'; $failed = $true; continue }}
+  # MSI registra "MsiExec.exe /I{{GUID}}", que abre el asistente de modificacion:
+  # se cambia por /x silencioso.
+  if ($cmd -match 'msiexec' -and $cmd -match '(\{{[0-9A-Fa-f-]{{36}}\}})') {{
+    $exe = 'msiexec.exe'; $argList = "/x $($Matches[1]) /qn /norestart"
+  }} else {{
+    # Comillas exteriores para que cmd /c no recorte las de la ruta.
+    $exe = 'cmd.exe'; $argList = '/c "' + $cmd + '"'
+  }}
+  Write-Output ("  CMD=" + $exe + " " + $argList)
+  if (-not $apply) {{ continue }}
+  $p = Start-Process -FilePath $exe -ArgumentList $argList -Wait -PassThru -NoNewWindow
+  Write-Output ("  EXIT=" + $p.ExitCode)
+  # 1605 = ya no estaba instalado, 3010 = OK pendiente de reinicio.
+  if ($p.ExitCode -notin 0, 1605, 3010) {{ $failed = $true }}
+}}
+if ($failed) {{ exit 1 }}
+"#,
+        name = name.replace('\'', "''"),
+        apply = if apply { "true" } else { "false" },
+    )
 }
