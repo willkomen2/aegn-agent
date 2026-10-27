@@ -22,12 +22,25 @@ use anyhow::Result;
 /// Programas no autorizados que el proceso desinstala por defecto, ademas de
 /// RustDesk y OpenCode (que tienen opcion propia). Se buscan por nombre: el
 /// texto debe aparecer en el nombre del programa.
+/// Minecraft queda fuera a proposito: muchas escuelas usan Minecraft Education.
 pub const APPS: &[&str] = &[
+    // Personalizacion y musica.
     "Lively Wallpaper",
     "Custom Cursor",
     "CursorFX",
-    "Roblox",
     "Spotify",
+    // Juegos y sus lanzadores.
+    "Roblox",
+    "Steam",
+    "Riot Client",
+    "Riot Vanguard",
+    "VALORANT",
+    "League of Legends",
+    "Epic Games",
+    "Battle.net",
+    "EA app",
+    "Ubisoft Connect",
+    "GOG Galaxy",
 ];
 
 /// Ruta del historial de desinstalaciones (junto al ejecutable).
@@ -216,11 +229,11 @@ function Historico($programa, $versao, $perfil, $metodo, $resultado) {
   } catch { Write-Output "  [aviso] Não foi possível escrever no histórico: $_" }
 }
 
-# Ejecuta un desinstalador con un limite de 10 minutos; devuelve el codigo.
+# Ejecuta un desinstalador con un limite de 5 minutos; devuelve el codigo.
 function Executar($exe, $argList) {
   $p = Start-Process -FilePath $exe -ArgumentList $argList -PassThru -NoNewWindow
   $null = $p.Handle   # sin esto, ExitCode sale vacio en PowerShell 5.1
-  if (-not $p.WaitForExit(600000)) { $p.Kill(); return -1 }
+  if (-not $p.WaitForExit(300000)) { $p.Kill(); return -1 }
   return $p.ExitCode
 }
 
@@ -262,6 +275,8 @@ foreach ($app in $maquina) {
     $exe = 'msiexec.exe'; $argList = "/x $($Matches[1]) /qn /norestart"
   } else {
     if ($cmd -match 'unins\d+\.exe' -and $cmd -notmatch '/VERYSILENT') { $cmd += ' /VERYSILENT /SUPPRESSMSGBOXES /NORESTART' }
+    # NSIS (Steam, entre otros): uninstall.exe o uninst.exe se callan con /S.
+    if ($cmd -match '\\uninst(all)?\.exe"?\s*$') { $cmd += ' /S' }
     # Comillas exteriores para que cmd /c no recorte las de la ruta.
     $exe = 'cmd.exe'; $argList = '/c "' + $cmd + '"'
   }
@@ -371,7 +386,14 @@ if ($script:failed) { exit 1 }
 mod tests {
     #[test]
     fn la_lista_por_defecto_incluye_las_apps_pedidas() {
-        for app in ["Lively Wallpaper", "Custom Cursor", "Roblox", "Spotify"] {
+        for app in [
+            "Lively Wallpaper",
+            "Custom Cursor",
+            "Roblox",
+            "Spotify",
+            "Steam",
+            "Riot Client",
+        ] {
             assert!(super::APPS.contains(&app), "falta {app}");
         }
     }

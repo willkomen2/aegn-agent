@@ -191,7 +191,7 @@ impl App {
             }
             Entry::ToggleApps => {
                 format!(
-                    "{} Desinstalar Roblox, Spotify, Lively...",
+                    "{} Desinstalar jogos, Spotify, Lively...",
                     chk(self.cfg.uninstall_apps)
                 )
             }
@@ -224,7 +224,7 @@ impl App {
             Entry::ToggleSimple => "Salta o inventário inicial e reduz a saída.",
             Entry::ToggleRustdesk => "Inclui o RustDesk (acesso remoto) na desinstalação.",
             Entry::ToggleOpencode => "Inclui o OpenCode na desinstalação.",
-            Entry::ToggleApps => "Lively Wallpaper, Custom Cursor, CursorFX, Roblox e Spotify, em todos os perfis e na Microsoft Store.",
+            Entry::ToggleApps => "Steam, Riot (Valorant, LoL), Epic, Battle.net, EA, Ubisoft, GOG, Roblox, Spotify, Lively e cursores, em todos os perfis e na Store.",
             Entry::TogglePolicies => "AppLocker: só se executam programas, scripts e MSI do Windows e de Program Files (os administradores, tudo). AppData\\Local e Transferências, negados.",
             Entry::ToggleAuditOnly => "AppLocker em modo auditoria: não bloqueia, só regista o que bloquearia. Use-o primeiro em cada sala e reveja os 'Eventos do AppLocker'.",
             Entry::ToggleFirewall => "Bloqueia a saída pelas portas do RustDesk, AnyDesk e TeamViewer.",
@@ -251,7 +251,7 @@ impl App {
             (c.uninstall_opencode, "Desinstalar o OpenCode"),
             (
                 c.uninstall_apps,
-                "Desinstalar Lively, Custom Cursor, CursorFX, Roblox e Spotify",
+                "Desinstalar jogos, Spotify, Lively e cursores",
             ),
             (
                 c.apply_policies && !c.audit_only,

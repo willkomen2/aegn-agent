@@ -14,8 +14,10 @@ caso a senha fica `admin` até a alterar com `aegn senha alterar`.
 
 ### Novidades
 
-- **Desinstalação por defeito** de Lively Wallpaper, Custom Cursor, CursorFX,
-  Roblox e Spotify (além de RustDesk e OpenCode), em todos os perfis de
+- **Desinstalação por defeito** de jogos e lançadores (Steam, Riot Client e
+  Vanguard, VALORANT, League of Legends, Epic Games, Battle.net, EA app,
+  Ubisoft Connect, GOG Galaxy, Roblox), Spotify, Lively Wallpaper, Custom
+  Cursor e CursorFX (além de RustDesk e OpenCode), em todos os perfis de
   utilizador e na Microsoft Store. Desativar: `--sem-aplicacoes`.
 - **Histórico de desinstalações**: `aegn auditoria historico` mostra quando, em
   que perfil e como foi desinstalado cada programa; o `auditoria listar` mostra

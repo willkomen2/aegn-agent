@@ -59,7 +59,7 @@ enum Command {
         /// Não desinstalar o OpenCode.
         #[arg(long, alias = "no-opencode")]
         sem_opencode: bool,
-        /// Não desinstalar as aplicações por defeito (Lively Wallpaper, Custom Cursor, CursorFX, Roblox, Spotify).
+        /// Não desinstalar as aplicações por defeito (jogos, Spotify, Lively, cursores: ver aegn auditoria listar).
         #[arg(long)]
         sem_aplicacoes: bool,
         /// Não aplicar as políticas de execução (AppLocker).

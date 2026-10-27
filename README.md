@@ -130,8 +130,12 @@ continuam a funcionar.
 ## Software não autorizado
 
 O `aegn executar` desinstala por defeito o **RustDesk**, o **OpenCode**,
-o **Lively Wallpaper**, o **Custom Cursor**, o **CursorFX**, o **Roblox** e o
-**Spotify** (a lista está em `src/audit.rs`, `APPS`). Para cada um:
+os jogos e os seus lançadores (**Steam**, **Riot Client**, **Riot Vanguard**,
+**VALORANT**, **League of Legends**, **Epic Games**, **Battle.net**, **EA app**,
+**Ubisoft Connect**, **GOG Galaxy**, **Roblox**), o **Spotify**, o
+**Lively Wallpaper**, o **Custom Cursor** e o **CursorFX** (a lista está em
+`src/audit.rs`, `APPS`; o Minecraft fica de fora por causa do Minecraft
+Education). Para cada um:
 
 - instalação do computador: o desinstalador do próprio programa, em silêncio;
 - instalação por utilizador (Roblox, Spotify...): em **todos os perfis**,
