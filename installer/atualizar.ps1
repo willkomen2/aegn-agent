@@ -48,8 +48,10 @@ if ($Registar) {
     $acao = New-ScheduledTaskAction -Execute $ps `
         -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$PSCommandPath`""
     $arranque = New-ScheduledTaskTrigger -AtStartup
-    $arranque.Delay = 'PT30S'
+    $arranque.Delay = 'PT2M'
     $sessao = New-ScheduledTaskTrigger -AtLogOn
+    # Nunca instalar em pleno início de sessão.
+    $sessao.Delay = 'PT15M'
     # O atraso aleatório evita que uma sala inteira descarregue ao mesmo tempo.
     $diaria = New-ScheduledTaskTrigger -Daily -At '13:00' -RandomDelay (New-TimeSpan -Minutes 60)
     $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest

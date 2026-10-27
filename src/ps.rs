@@ -23,6 +23,22 @@ pub fn run(script: &str) -> Result<String> {
         combined.push_str(&stderr);
     }
     if !output.status.success() {
+        let l = combined.to_lowercase();
+        if [
+            "access is denied",
+            "acesso negado",
+            "unauthorizedaccess",
+            "acceso denegado",
+        ]
+        .iter()
+        .any(|k| l.contains(k))
+        {
+            bail!(
+                "sem permissão: abra a consola como administrador (Gestor de Tarefas > Ficheiro > \
+                 Executar nova tarefa > marcar \"Criar esta tarefa com privilégios administrativos\").\n{}",
+                combined.trim()
+            );
+        }
         bail!(
             "o PowerShell terminou com {}:\n{}",
             output.status,

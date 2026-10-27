@@ -88,7 +88,15 @@ fn history_path() -> String {
 /// Comillas simples escapadas para un literal de PowerShell.
 #[cfg(windows)]
 fn q(s: &str) -> String {
-    s.replace('\'', "''")
+    // PowerShell tambien toma las comillas tipograficas como comilla simple.
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if matches!(c, '\'' | '\u{2018}' | '\u{2019}' | '\u{201A}' | '\u{201B}') {
+            out.push(c);
+        }
+        out.push(c);
+    }
+    out
 }
 
 /// Lista el software instalado con fecha, usuario y editor.
@@ -243,33 +251,29 @@ pub fn clean(apply: bool) -> Result<()> {
 
 /// Busca `APPS` en los perfiles con sesion abierta y en la Store, y los
 /// quita si `apply`. Devuelve cuantos programas fallaron.
+///
+/// Un solo PowerShell para toda la lista: el registro y `Get-AppxPackage
+/// -AllUsers` se leen una vez. Antes eran 15 procesos seguidos en cada
+/// arranque, compitiendo con el primer inicio de sesion de los alumnos.
 #[cfg(windows)]
 fn clean_all_profiles(apply: bool) -> Result<usize> {
-    let mut failures = 0;
-    let mut found = false;
-    for name in APPS {
-        match crate::ps::run(&uninstall_script(name, apply)) {
-            Ok(out) => {
-                let out: Vec<&str> = out
-                    .lines()
-                    .filter(|l| !l.starts_with("NAO_ENCONTRADO"))
-                    .collect();
-                if !out.is_empty() {
-                    found = true;
-                    println!("{}", out.join("\n"));
-                }
-            }
-            Err(e) => {
-                found = true;
-                println!("[erro] {name}: {e:#}");
-                failures += 1;
-            }
+    let out = match crate::ps::run(&uninstall_script(APPS, apply, true)) {
+        Ok(out) => out,
+        Err(e) => {
+            println!("[erro] {e:#}");
+            return Ok(1);
         }
-    }
-    if !found {
+    };
+    let out: Vec<&str> = out
+        .lines()
+        .filter(|l| !l.starts_with("NAO_ENCONTRADO") && !l.trim().is_empty())
+        .collect();
+    if out.is_empty() {
         println!("[ok] Nada encontrado noutros perfis nem na Store.");
+    } else {
+        println!("{}", out.join("\n"));
     }
-    Ok(failures)
+    Ok(out.iter().filter(|l| l.starts_with("FALHOU=")).count())
 }
 
 #[cfg(not(windows))]
@@ -419,7 +423,10 @@ pub fn remove(name: &str, apply: bool) -> Result<()> {
         } else {
             println!("[simulação] A procurar software que corresponda a: '{name}'");
         }
-        print!("{}", crate::ps::run(&uninstall_script(name, apply))?);
+        print!(
+            "{}",
+            crate::ps::run(&uninstall_script(&[name], apply, false))?
+        );
         if !apply {
             println!("[simulação] Execute com --aplicar para desinstalar de facto (requer administrador).");
         }
@@ -442,7 +449,10 @@ pub fn remove(name: &str, apply: bool) -> Result<()> {
 /// cubre maquina, todos los perfiles y la Store, y lo anota en el historial.
 #[cfg(windows)]
 fn remove_app(app: &App) -> Result<()> {
-    print!("{}", crate::ps::run(&uninstall_script(&app.name, true))?);
+    print!(
+        "{}",
+        crate::ps::run(&uninstall_script(&[app.name.as_str()], true, false))?
+    );
     Ok(())
 }
 
@@ -581,7 +591,7 @@ foreach ($a in $alvos) {
 
 # Cursores personalizados que se descargan a Transferencias.
 Get-ChildItem (Join-Path $env:USERPROFILE 'Downloads') -File |
-  Where-Object { $_.Extension -in '.ani', '.cur' -or $_.Name -match 'cursor' } |
+  Where-Object { $_.Extension -in '.ani', '.cur' } |
   ForEach-Object {
     Write-Output ("REMOVER=" + $_.FullName)
     if ($apply) { Remove-Item -LiteralPath $_.FullName -Force }
@@ -686,26 +696,32 @@ foreach ($rk in @(
 }
 "#;
 
-/// Script que localiza los programas cuyo nombre contiene `name` (maquina,
-/// todos los perfiles y Store) y, si `apply`, los quita y lo anota en el
-/// historial. No encontrar nada no es un error (el equipo ya esta limpio); un
-/// desinstalador que falla si lo es.
+/// Script que localiza los programas de `names` (maquina, todos los perfiles y
+/// Store) y, si `apply`, los quita y lo anota en el historial. No encontrar
+/// nada no es un error (el equipo ya esta limpio); un desinstalador que falla
+/// si lo es: sale `FALHOU=<nombre>` y, fuera de `lote`, codigo 1.
+///
+/// En `lote` (la lista fija de `clean`) el nombre debe aparecer como palabra
+/// entera ("EA app" no casa con "Idea App") y no se recurre a winget, que
+/// contacta con la red y puede colgarse.
 #[cfg(windows)]
-fn uninstall_script(name: &str, apply: bool) -> String {
+fn uninstall_script(names: &[&str], apply: bool, lote: bool) -> String {
+    let names: Vec<String> = names.iter().map(|n| format!("'{}'", q(n))).collect();
     UNINSTALL_PS
-        .replace("__NAME__", &q(name))
+        .replace("__NAMES__", &names.join(", "))
         .replace("__APPLY__", if apply { "true" } else { "false" })
+        .replace("__LOTE__", if lote { "true" } else { "false" })
         .replace("__LOG__", &q(&history_path()))
 }
 
 #[cfg(windows)]
 const UNINSTALL_PS: &str = r#"
-$name = '__NAME__'
+$nomes = @(__NAMES__)
 $apply = $__APPLY__
+$lote = $__LOTE__
 $historico = '__LOG__'
 $uninst = 'Software\Microsoft\Windows\CurrentVersion\Uninstall'
-$script:failed = $false
-$script:found = 0
+$falhas = 0
 
 function Historico($programa, $versao, $perfil, $metodo, $resultado) {
   if (-not $apply -or -not $historico) { return }
@@ -723,7 +739,8 @@ function Historico($programa, $versao, $perfil, $metodo, $resultado) {
 function Executar($exe, $argList) {
   $p = Start-Process -FilePath $exe -ArgumentList $argList -PassThru -NoNewWindow
   $null = $p.Handle   # sin esto, ExitCode sale vacio en PowerShell 5.1
-  if (-not $p.WaitForExit(300000)) { $p.Kill(); return -1 }
+  # taskkill /T: matar solo cmd.exe dejaria colgado al desinstalador hijo.
+  if (-not $p.WaitForExit(300000)) { & taskkill.exe /T /F /PID $p.Id 2>&1 | Out-Null; return -1 }
   return $p.ExitCode
 }
 
@@ -750,9 +767,38 @@ function Pasta-App($app, $perfilDir) {
   return $null
 }
 
+# true si el nombre del programa corresponde a $nome. En lote, palabra entera.
+function Casa($texto, $nome) {
+  if (-not $texto) { return $false }
+  if ($lote) { return $texto -match ('(^|\W)' + [regex]::Escape($nome) + '(\W|$)') }
+  return $texto -like ('*' + [WildcardPattern]::Escape($nome) + '*')
+}
+
+# Todo se lee una sola vez para la lista entera.
+$todasMaquina = @(Get-ItemProperty "HKLM:\SOFTWARE\$uninst\*", "HKLM:\SOFTWARE\WOW6432Node\$uninst\*" -ErrorAction SilentlyContinue |
+  Where-Object { $_.DisplayName })
+# Solo perfiles con la sesion abierta (su hive ya esta en HKEY_USERS). Cargar
+# el NTUSER.DAT de los demas con reg load congelaba el inicio de sesion.
+$perfisAbertos = @(Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList' |
+  Where-Object { $_.PSChildName -match '^S-1-(5-21|12-1)-' } | ForEach-Object {
+    $raiz = "Registry::HKEY_USERS\$($_.PSChildName)"
+    if (Test-Path $raiz) {
+      $dir = (Get-ItemProperty $_.PSPath).ProfileImagePath
+      [pscustomobject]@{
+        Dir = $dir
+        Nome = Split-Path $dir -Leaf
+        Apps = @(Get-ItemProperty "$raiz\$uninst\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName })
+      }
+    }
+  })
+$todosAppx = @(Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike 'Microsoft.*' -and $_.Name -notlike 'MicrosoftWindows.*' -and -not $_.IsFramework -and $_.SignatureKind -ne 'System' })
+
+foreach ($name in $nomes) {
+$script:failed = $false
+$script:found = 0
+
 # --- Instalaciones de maquina ---------------------------------------------
-$maquina = @(Get-ItemProperty "HKLM:\SOFTWARE\$uninst\*", "HKLM:\SOFTWARE\WOW6432Node\$uninst\*" -ErrorAction SilentlyContinue |
-  Where-Object { $_.DisplayName -like "*$name*" })
+$maquina = @($todasMaquina | Where-Object { Casa $_.DisplayName $name })
 foreach ($app in $maquina) {
   $script:found++
   Write-Output ("ALVO=" + $app.DisplayName + " " + $app.DisplayVersion)
@@ -784,17 +830,10 @@ foreach ($app in $maquina) {
 }
 
 # --- Instalaciones por usuario, en todos los perfiles ----------------------
-# Solo perfiles con la sesion abierta (su hive ya esta en HKEY_USERS). Cargar
-# el NTUSER.DAT de los demas con reg load congelaba el inicio de sesion.
-$perfis = Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList' |
-  Where-Object { $_.PSChildName -like 'S-1-5-21-*' }
-foreach ($pf in $perfis) {
-  $sid = $pf.PSChildName
-  $perfilDir = (Get-ItemProperty $pf.PSPath).ProfileImagePath
-  $perfil = Split-Path $perfilDir -Leaf
-  $raiz = "Registry::HKEY_USERS\$sid"
-  if (-not (Test-Path $raiz)) { continue }
-  $apps = @(Get-ItemProperty "$raiz\$uninst\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like "*$name*" })
+foreach ($pf in $perfisAbertos) {
+  $perfilDir = $pf.Dir
+  $perfil = $pf.Nome
+  $apps = @($pf.Apps | Where-Object { Casa $_.DisplayName $name })
   foreach ($app in $apps) {
     $script:found++
     Write-Output ("ALVO=" + $app.DisplayName + " " + $app.DisplayVersion + "  (perfil " + $perfil + ")")
@@ -825,8 +864,8 @@ foreach ($pf in $perfis) {
 }
 
 # --- Apps de la Microsoft Store --------------------------------------------
-$appxName = $name -replace '\s', ''
-$pkgs = @(Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*$appxName*" -and $_.Name -notlike 'Microsoft.*' -and $_.Name -notlike 'MicrosoftWindows.*' -and -not $_.IsFramework -and $_.SignatureKind -ne 'System' })
+$appxName = $name -replace '[^A-Za-z0-9]', ''
+$pkgs = @($todosAppx | Where-Object { $appxName -and $_.Name -like "*$appxName*" })
 foreach ($p in $pkgs) {
   $script:found++
   Write-Output ("ALVO=" + $p.Name + " " + $p.Version + "  (Microsoft Store)")
@@ -843,19 +882,23 @@ foreach ($p in $pkgs) {
 }
 
 # --- Ultimo recurso: winget -------------------------------------------------
+# Solo a peticion expresa (no en lote), nombre exacto y con limite de tiempo.
 if ($script:found -eq 0) {
-  if ($apply -and (Get-Command winget -ErrorAction SilentlyContinue)) {
-    & winget uninstall --name $name --silent --accept-source-agreements --disable-interactivity 2>&1 | Out-Null
-    if ($LASTEXITCODE -eq 0) {
+  $winget = Get-Command winget -ErrorAction SilentlyContinue
+  if ($apply -and -not $lote -and $winget) {
+    $code = Executar $winget.Source ('uninstall --exact --name "' + $name + '" --silent --accept-source-agreements --disable-interactivity')
+    if ($code -eq 0) {
       Write-Output "[ok] '$name' desinstalado através do winget."
       Historico $name '' 'computador' 'winget' 'ok'
-      exit 0
+      continue
     }
   }
   Write-Output "NAO_ENCONTRADO: nenhum programa corresponde a '$name'."
-  exit 0
+  continue
 }
-if ($script:failed) { exit 1 }
+if ($script:failed) { Write-Output "FALHOU=$name"; $falhas++ }
+}
+if ($falhas -gt 0 -and -not $lote) { exit 1 }
 "#;
 
 #[cfg(test)]

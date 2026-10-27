@@ -23,6 +23,7 @@ mod policy;
 mod process;
 #[cfg(windows)]
 mod ps;
+mod rescue;
 mod schedule;
 mod tui;
 mod update;
@@ -123,6 +124,15 @@ enum Command {
     /// Desfaz tudo o que o agente aplicou (AppLocker, firewall, navegador e tarefa).
     #[command(alias = "revert")]
     Reverter {
+        #[arg(long, alias = "apply")]
+        aplicar: bool,
+    },
+
+    /// Resgate: desfaz tudo o que pode bloquear o computador ao iniciar sessão
+    /// (esvazia o AppLocker, firewall, navegador, tarefa, perfis montados).
+    /// Não pede a senha do AEGN, mas exige consola de administrador.
+    #[command(alias = "resgatar", alias = "unlock")]
+    Desbloquear {
         #[arg(long, alias = "apply")]
         aplicar: bool,
     },
@@ -450,6 +460,7 @@ fn main() -> Result<()> {
         Some(Command::Estado) => process::status_all()?,
         Some(Command::Reverter { aplicar }) => process::revert_all(aplicar)?,
         Some(Command::Instalar { ficheiro }) => install::run(&ficheiro)?,
+        Some(Command::Desbloquear { aplicar }) => rescue::run(aplicar)?,
         Some(Command::Senha { action }) => match action {
             SenhaAction::Alterar => auth::change()?,
             SenhaAction::Estado => auth::status()?,

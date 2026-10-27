@@ -89,6 +89,7 @@ pub static RULES: &[Rule] = &[
 /// Software que nunca se desinstala, aunque una regla lo pillara. Se compara
 /// con el nombre y con el editor.
 pub static KEEP: &[&str] = &[
+    "minecraft education",
     "tailscale",
     "microsoft",
     "windows",

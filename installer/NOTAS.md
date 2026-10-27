@@ -14,6 +14,15 @@ caso a senha fica `admin` até a alterar com `aegn senha alterar`.
 
 ### Novidades
 
+- **Resgate: computador desbloqueado ao instalar** (0.8.0): o instalador e a
+  atualização executam `aegn desbloquear --aplicar`, que esvazia o AppLocker
+  local (guarda cópia em C:\ProgramData\AEGN), põe o AppIDSvc em manual,
+  retira as regras de firewall e as diretivas de navegador do AEGN, remove a
+  tarefa AEGN-Agent e desmonta perfis HKU\AEGN_*. Reinicie depois. A
+  atualização automática espera 2 min após o arranque e 15 min após o início
+  de sessão. Minecraft Education deixa de ser desinstalado; a limpeza usa um
+  só PowerShell e não recorre ao winget.
+
 - **Correção urgente: sessão congelada ao iniciar** (0.7.1): a limpeza deixa
   de montar o NTUSER.DAT dos perfis sem sessão (se não o desmontava, o Windows
   não conseguia abrir o perfil e o ambiente de trabalho ficava congelado, em

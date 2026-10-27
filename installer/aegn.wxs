@@ -6,17 +6,16 @@
     lá, o que a tarefa SYSTEM exige) e adiciona essa pasta ao PATH do sistema.
   - Instala o atualizar.ps1 e regista a tarefa AEGN-Atualizar (SYSTEM), que
     instala sozinha os releases novos do GitHub, sem UAC nem senha.
-  - Aplica as diretivas de navegador: Chrome, Edge e Firefox apagam as cookies
-    (e as contas Google abertas) ao fechar. Ao desinstalar retiram-se.
+  - Executa "aegn desbloquear": esvazia o AppLocker local, retira as regras de
+    firewall e as diretivas de navegador do AEGN, remove a tarefa AEGN-Agent e
+    desmonta perfis HKU\AEGN_*. Também ao desinstalar.
   - Ao desinstalar, elimina as tarefas AEGN-Agent e AEGN-Atualizar (apontariam
     para ficheiros que já não existem) e a senha guardada em HKLM\SOFTWARE\AEGN.
     Numa atualização não se apaga nada disso: o MSI antigo desinstala-se
     inteiro antes de instalar o novo, e a senha e as tarefas têm de sobreviver.
-    As regras AppLocker e de firewall mantêm-se: para as retirar, execute
-    "aegn reverter" com a opção aplicar antes de desinstalar (o desinstalar.cmd faz isso).
 
   Compilar (Windows):
-    wix build installer\aegn.wxs -arch x64 -d Version=0.7.1 -d ExePath=target\release\aegn.exe -o AEGN-Security.msi
+    wix build installer\aegn.wxs -arch x64 -d Version=0.8.0 -d ExePath=target\release\aegn.exe -o AEGN-Security.msi
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="AEGN Security"
@@ -96,19 +95,17 @@
                   Impersonate="no"
                   Return="ignore" />
 
-    <!-- Diretivas de navegador (apagar cookies e contas Google ao fechar). Correm
-         como SYSTEM, que o aegn não obriga a pôr a senha. -->
-    <CustomAction Id="AplicarNavegador"
+    <!-- Resgate: esvazia o AppLocker, retira firewall, diretivas de navegador
+         e a tarefa AEGN-Agent, e desmonta perfis. Desbloqueia o início de sessão. -->
+    <CustomAction Id="Desbloquear"
                   Directory="INSTALLFOLDER"
-                  ExeCommand="&quot;[INSTALLFOLDER]aegn.exe&quot; navegador impor --aplicar"
+                  ExeCommand="&quot;[INSTALLFOLDER]aegn.exe&quot; desbloquear --aplicar"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore" />
-    <!-- Substitui as regras AppLocker de versões anteriores (se existirem)
-         pelas desta versão, que não bloqueiam os administradores nem o Windows. -->
-    <CustomAction Id="AtualizarPolitica"
+    <CustomAction Id="DesbloquearRemover"
                   Directory="INSTALLFOLDER"
-                  ExeCommand="&quot;[INSTALLFOLDER]aegn.exe&quot; politica atualizar --aplicar"
+                  ExeCommand="&quot;[INSTALLFOLDER]aegn.exe&quot; desbloquear --aplicar"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore" />
@@ -128,13 +125,13 @@
               Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
       <Custom Action="RetirarNavegador" Before="RemoveFiles"
               Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+      <Custom Action="DesbloquearRemover" Before="RemoveFiles"
+              Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
       <Custom Action="RepararPerfis" After="InstallFiles"
               Condition="NOT REMOVE=&quot;ALL&quot;" />
       <Custom Action="RegistarAtualizacao" After="RepararPerfis"
               Condition="NOT REMOVE=&quot;ALL&quot;" />
-      <Custom Action="AplicarNavegador" After="RegistarAtualizacao"
-              Condition="NOT REMOVE=&quot;ALL&quot;" />
-      <Custom Action="AtualizarPolitica" After="AplicarNavegador"
+      <Custom Action="Desbloquear" After="RegistarAtualizacao"
               Condition="NOT REMOVE=&quot;ALL&quot;" />
     </InstallExecuteSequence>
   </Package>
