@@ -89,7 +89,7 @@ pub fn run(apply: bool) -> Result<()> {
         if !out.status.success() {
             anyhow::bail!(
                 "não foi possível lançar a tarefa {TASK}: {}\
-                 A tarefa é registada pelo instalador MSI (versão 0.3.0 ou posterior).",
+                 A tarefa é registada pelo instalador MSI (versão 0.4.0 ou posterior).",
                 String::from_utf8_lossy(&out.stderr).trim()
             );
         }
@@ -119,7 +119,7 @@ pub fn status() -> Result<()> {
         let ps = format!(
             r#"
 $t = Get-ScheduledTask -TaskName '{TASK}' -ErrorAction SilentlyContinue
-if (-not $t) {{ Write-Output 'Tarefa {TASK} não instalada (instale o MSI 0.3.0 ou posterior).'; exit 0 }}
+if (-not $t) {{ Write-Output 'Tarefa {TASK} não instalada (instale o MSI 0.4.0 ou posterior).'; exit 0 }}
 $i = $t | Get-ScheduledTaskInfo
 Write-Output ("Tarefa {TASK}: " + $t.State + "  (versão {VERSION}, github.com/{REPO})")
 Write-Output ("  Última execução: " + $i.LastRunTime + "  resultado: " + $i.LastTaskResult)

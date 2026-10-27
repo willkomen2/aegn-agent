@@ -58,7 +58,7 @@ aegn senha estado      # avisa se ainda é a de defeito
 
 ## Atualização automática
 
-A partir da versão 0.3.0, cada computador atualiza-se sozinho a partir dos
+A partir da versão 0.4.0, cada computador atualiza-se sozinho a partir dos
 [releases](../../releases) deste repositório, **sem UAC nem senha**:
 
 - o MSI instala o `atualizar.ps1` em `C:\Program Files\AEGN` e regista a
@@ -86,7 +86,7 @@ publicar uma versão nova basta subir a etiqueta `vX.Y.Z` (ver
 > - Quem puder publicar releases neste repositório consegue executar código
 >   como SYSTEM em todos os computadores da escola: proteja a conta do GitHub
 >   com 2FA e limite quem tem acesso de escrita.
-> - A versão 0.2.0 não traz o atualizador: instale a 0.3.0 uma vez à mão com o
+> - A versão 0.2.0 não traz o atualizador: instale a 0.4.0 uma vez à mão com o
 >   `instalar.cmd`; a partir daí é automático.
 > - Para desativar num computador:
 >   `schtasks /Change /TN AEGN-Atualizar /Disable` (como administrador).
@@ -98,11 +98,14 @@ Tudo o que altera o computador é **simulação** até se passar `--aplicar`.
 | Comando | O que faz |
 |---|---|
 | `aegn` / `aegn menu` | Menu interativo: saída ao vivo; em modo real pede a senha. |
-| `aegn executar` | Processo completo: inventário, administradores, desinstalação, AppLocker e firewall. Opções `--simples`, `--sem-rustdesk`, `--sem-opencode`, `--sem-aplicacoes`, `--sem-politicas`, `--so-auditoria`, `--sem-firewall`, `--aplicar`. |
+| `aegn executar` | Processo completo: inventário, administradores, desinstalação, limpeza da lista negra, AppLocker e firewall. Opções `--simples`, `--sem-rustdesk`, `--sem-opencode`, `--sem-limpeza`, `--sem-politicas`, `--so-auditoria`, `--sem-firewall`, `--aplicar`. |
 | `aegn estado` | Estado do AppLocker/AppIDSvc, regras de firewall, tarefa agendada e senha. |
 | `aegn reverter` | Desfaz tudo o que o agente aplicou (não reinstala software). |
-| `aegn auditoria listar` | Inventário do software instalado (computador e perfis com sessão aberta), software não autorizado encontrado e últimas desinstalações. |
-| `aegn auditoria historico [--max N]` | Quando, em que perfil e como foi desinstalado cada programa. |
+| `aegn auditoria listar` | Inventário: data de instalação, quem instalou, editor e tamanho (registo + Microsoft Store). |
+| `aegn auditoria detalhe <nome>` | Tudo o que se sabe de um programa: versão, pasta, origem e comando de desinstalação. |
+| `aegn auditoria suspeitos` | Só o software da lista negra (Roblox, Spotify, Lively Wallpaper, cursores, jogos, acesso remoto). |
+| `aegn auditoria limpar [--aplicar]` | Desinstala a lista negra, apaga os restos e repõe o cursor do Windows. |
+| `aegn auditoria rasto` | Instaladores descarregados, eventos do Windows com a conta que instalou e arranque automático. |
 | `aegn auditoria admins` | Membros do grupo local de Administradores. |
 | `aegn auditoria remover <nome>` | Desinstala software não autorizado em todos os perfis e na Microsoft Store. |
 | `aegn politica impor [--so-auditoria]` | Política AppLocker (Exe, Script e MSI). |
@@ -115,6 +118,49 @@ Tudo o que altera o computador é **simulação** até se passar `--aplicar`.
 
 Os nomes da versão 0.1 (`run`, `status`, `policy enforce`, `--apply`…)
 continuam a funcionar.
+
+## Auditoria: quem instalou o quê e quando
+
+`aegn auditoria listar` mostra, por programa: **origem** (`HKLM64`, `HKLM32`,
+`HKCU` ou `APPX`), **data de instalação**, **quem instalou** e o editor. A
+atribuição vem de dados que o próprio Windows guarda:
+
+- **Data**: `InstallDate` do instalador; se faltar, a última escrita da chave do
+  registo; por fim, a data de criação da pasta de instalação.
+- **Quem**: as chaves `HKCU` só as escreve o utilizador da sessão (a instalação
+  não pediu administrador); `HKLM` exige administrador e aparece como
+  `todos (admin)`.
+- **Rasto** (`aegn auditoria rasto`): instaladores descarregados para
+  Transferências, eventos `MsiInstaller` do Windows — que incluem a **conta que
+  lançou a instalação** — e programas de arranque automático.
+
+Isto é auditoria local e transparente: nada sai do computador e não há
+vigilância de conteúdo, só os metadados de instalação que o Windows já tem.
+
+## Limpeza da lista negra
+
+`aegn auditoria limpar --aplicar` desinstala o software que a escola não admite
+e apaga os restos, numa só passagem:
+
+| Regra | O que apanha |
+|---|---|
+| `roblox` | Roblox Player e Roblox Studio (instalação por utilizador). |
+| `spotify` | Spotify (Store ou instalador clássico). |
+| `lively` | Lively Wallpaper e fundos animados. |
+| `cursor` | Aplicações de cursores personalizados; os `.ani`/`.cur` descarregados e o esquema de ponteiros voltam ao predefinido. |
+| `jogos` | Steam, Epic, Riot, Valorant, Minecraft/TLauncher, Fortnite, EA, GOG, Battle.net. |
+| `p2p` | uTorrent, BitTorrent, qBittorrent. |
+| `limpeza` | CCleaner, Driver Booster, Advanced SystemCare, Glary. |
+| `remoto` | RustDesk, AnyDesk, TeamViewer. |
+| `emulador` | BlueStacks, LDPlayer, NoxPlayer, MEmu. |
+
+A remoção usa `Remove-AppxPackage` nas apps da Store, `winget` e, por fim, a
+`UninstallString` do registo. Uma **lista branca** protege o sistema: Windows,
+drivers (HP, NVIDIA, Intel, Realtek), Microsoft 365/Teams/Edge, Chrome,
+**Tailscale** e **Git** nunca são tocados, mesmo que uma regra coincida.
+
+Como tudo o resto, sem `--aplicar` é simulação: mostra o plano e não altera
+nada.
 
 ## Implantação recomendada numa sala
 

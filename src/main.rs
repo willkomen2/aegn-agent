@@ -16,6 +16,7 @@
 mod audit;
 mod auth;
 mod firewall;
+mod junk;
 mod policy;
 mod process;
 #[cfg(windows)]
@@ -59,9 +60,9 @@ enum Command {
         /// Não desinstalar o OpenCode.
         #[arg(long, alias = "no-opencode")]
         sem_opencode: bool,
-        /// Não desinstalar as aplicações por defeito (jogos, Spotify, Lively, cursores: ver aegn auditoria listar).
-        #[arg(long)]
-        sem_aplicacoes: bool,
+        /// Não limpar o software da lista negra (Roblox, Spotify, Lively...).
+        #[arg(long, alias = "no-clean")]
+        sem_limpeza: bool,
         /// Não aplicar as políticas de execução (AppLocker).
         #[arg(long, alias = "no-policies")]
         sem_politicas: bool,
@@ -140,9 +141,28 @@ enum UpdateAction {
 
 #[derive(Subcommand)]
 enum AuditAction {
-    /// Lista o software instalado no computador.
+    /// Lista o software instalado no computador (data, quem e editor).
     #[command(alias = "list")]
     Listar,
+    /// Detalhe de um programa: versão, data, quem instalou, pasta e origem.
+    #[command(alias = "detail")]
+    Detalhe {
+        /// Parte do nome do programa.
+        nome: String,
+    },
+    /// Lista só o software não autorizado conhecido.
+    #[command(alias = "suspects")]
+    Suspeitos,
+    /// Desinstala o software não autorizado e limpa restos e cursores.
+    #[command(alias = "clean")]
+    Limpar {
+        /// Remove de facto (por defeito apenas simula). Pede a senha.
+        #[arg(long, alias = "apply")]
+        aplicar: bool,
+    },
+    /// Rasto da instalação: instaladores, eventos e arranque automático.
+    #[command(alias = "evidence")]
+    Rasto,
     /// Lista os membros do grupo local de Administradores.
     Admins,
     /// Quando e onde foi desinstalado cada programa.
@@ -251,7 +271,7 @@ impl Command {
             Command::Executar { aplicar, .. }
             | Command::Reverter { aplicar }
             | Command::Auditoria {
-                action: AuditAction::Remover { aplicar, .. },
+                action: AuditAction::Remover { aplicar, .. } | AuditAction::Limpar { aplicar },
             }
             | Command::Politica {
                 action: PolicyAction::Impor { aplicar, .. } | PolicyAction::Reverter { aplicar },
@@ -319,7 +339,7 @@ fn main() -> Result<()> {
             simples,
             sem_rustdesk,
             sem_opencode,
-            sem_aplicacoes,
+            sem_limpeza,
             sem_politicas,
             so_auditoria,
             sem_firewall,
@@ -328,7 +348,7 @@ fn main() -> Result<()> {
             simple: simples,
             uninstall_rustdesk: !sem_rustdesk,
             uninstall_opencode: !sem_opencode,
-            uninstall_apps: !sem_aplicacoes,
+            clean_junk: !sem_limpeza,
             apply_policies: !sem_politicas,
             audit_only: so_auditoria,
             firewall: !sem_firewall,
@@ -336,6 +356,10 @@ fn main() -> Result<()> {
         })?,
         Some(Command::Auditoria { action }) => match action {
             AuditAction::Listar => audit::list()?,
+            AuditAction::Detalhe { nome } => audit::detail(&nome)?,
+            AuditAction::Suspeitos => audit::suspects()?,
+            AuditAction::Limpar { aplicar } => audit::clean(aplicar)?,
+            AuditAction::Rasto => audit::evidence()?,
             AuditAction::Admins => audit::admins()?,
             AuditAction::Historico { max } => audit::history(max)?,
             AuditAction::Remover { nome, aplicar } => audit::remove(&nome, aplicar)?,
@@ -398,10 +422,20 @@ mod tests {
         assert!(!parse(&["estado"]).applies());
         assert!(!parse(&["politica", "eventos"]).applies());
         assert!(!parse(&["auditoria", "historico"]).applies());
-        assert!(parse(&["executar", "--sem-aplicacoes", "--aplicar"]).applies());
+        assert!(parse(&["executar", "--sem-limpeza", "--aplicar"]).applies());
         // Instala o release oficial pela tarefa SYSTEM: não pede a senha.
         assert!(!parse(&["atualizar", "--aplicar"]).applies());
         assert!(!parse(&["atualizar", "estado"]).applies());
+    }
+
+    #[test]
+    fn la_limpieza_solo_pide_contrasena_si_aplica() {
+        assert!(!parse(&["auditoria", "limpar"]).applies());
+        assert!(parse(&["auditoria", "limpar", "--aplicar"]).applies());
+        assert!(parse(&["auditoria", "clean", "--apply"]).applies());
+        assert!(!parse(&["auditoria", "suspeitos"]).applies());
+        assert!(!parse(&["auditoria", "rasto"]).applies());
+        assert!(!parse(&["auditoria", "detalhe", "Roblox"]).applies());
     }
 
     #[test]

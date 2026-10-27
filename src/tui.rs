@@ -42,12 +42,15 @@ enum Entry {
     ToggleSimple,
     ToggleRustdesk,
     ToggleOpencode,
-    ToggleApps,
+    ToggleClean,
     TogglePolicies,
     ToggleAuditOnly,
     ToggleFirewall,
     ToggleApply,
     Audit,
+    Suspects,
+    Clean,
+    Evidence,
     History,
     Admins,
     Status,
@@ -63,7 +66,7 @@ impl Entry {
     fn destructive(self) -> bool {
         matches!(
             self,
-            Entry::Start | Entry::ScheduleInstall | Entry::RevertAll
+            Entry::Start | Entry::Clean | Entry::ScheduleInstall | Entry::RevertAll
         )
     }
 }
@@ -75,13 +78,16 @@ const ENTRIES: &[Entry] = &[
     Entry::ToggleSimple,
     Entry::ToggleRustdesk,
     Entry::ToggleOpencode,
-    Entry::ToggleApps,
+    Entry::ToggleClean,
     Entry::TogglePolicies,
     Entry::ToggleAuditOnly,
     Entry::ToggleFirewall,
     Entry::ToggleApply,
     Entry::Header("FERRAMENTAS"),
     Entry::Audit,
+    Entry::Suspects,
+    Entry::Clean,
+    Entry::Evidence,
     Entry::History,
     Entry::Admins,
     Entry::Status,
@@ -189,11 +195,8 @@ impl App {
             Entry::ToggleOpencode => {
                 format!("{} Desinstalar OpenCode", chk(self.cfg.uninstall_opencode))
             }
-            Entry::ToggleApps => {
-                format!(
-                    "{} Desinstalar jogos, Spotify, Lively...",
-                    chk(self.cfg.uninstall_apps)
-                )
+            Entry::ToggleClean => {
+                format!("{} Limpar lixo (jogos e apps)", chk(self.cfg.clean_junk))
             }
             Entry::TogglePolicies => {
                 format!("{} Políticas de execução", chk(self.cfg.apply_policies))
@@ -206,6 +209,9 @@ impl App {
             }
             Entry::ToggleApply => format!("{} APLICAR DE FACTO", chk(self.cfg.apply)),
             Entry::Audit => "Auditar software instalado".to_string(),
+            Entry::Suspects => "Ver software não autorizado".to_string(),
+            Entry::Clean => "Limpar agora (desinstalar)".to_string(),
+            Entry::Evidence => "Rasto: quem instalou".to_string(),
             Entry::History => "Histórico de desinstalações".to_string(),
             Entry::Admins => "Administradores locais".to_string(),
             Entry::Status => "Estado das proteções".to_string(),
@@ -224,12 +230,15 @@ impl App {
             Entry::ToggleSimple => "Salta o inventário inicial e reduz a saída.",
             Entry::ToggleRustdesk => "Inclui o RustDesk (acesso remoto) na desinstalação.",
             Entry::ToggleOpencode => "Inclui o OpenCode na desinstalação.",
-            Entry::ToggleApps => "Steam, Riot (Valorant, LoL), Epic, Battle.net, EA, Ubisoft, GOG, Roblox, Spotify, Lively e cursores, em todos os perfis e na Store.",
+            Entry::ToggleClean => "Desinstala Roblox, Spotify, Lively Wallpaper, cursores personalizados, jogos (Steam, Riot, Epic, Battle.net, EA, Ubisoft, GOG) e acesso remoto não autorizado em todos os perfis e na Store, e apaga os restos. Tailscale, Git e o software do sistema ficam sempre.",
             Entry::TogglePolicies => "AppLocker: só se executam programas, scripts e MSI do Windows e de Program Files (os administradores, tudo). AppData\\Local e Transferências, negados.",
             Entry::ToggleAuditOnly => "AppLocker em modo auditoria: não bloqueia, só regista o que bloquearia. Use-o primeiro em cada sala e reveja os 'Eventos do AppLocker'.",
             Entry::ToggleFirewall => "Bloqueia a saída pelas portas do RustDesk, AnyDesk e TeamViewer.",
             Entry::ToggleApply => "Ativo: alterações reais (requer administrador e a senha do AEGN). Inativo: apenas simula.",
             Entry::Audit => "Lista o software instalado sem alterar nada.",
+            Entry::Suspects => "Mostra só o que incumpre as regras da escola (Roblox, Spotify, Lively, cursores, jogos, acesso remoto).",
+            Entry::Clean => "Desinstala esse software, apaga pastas de dados e cursores descarregados e repõe o cursor do Windows. Em simulação mostra o que faria.",
+            Entry::Evidence => "Instaladores descarregados, eventos do Windows com a conta que instalou e programas de arranque automático.",
             Entry::History => "Quando, em que perfil e como foi desinstalado cada programa.",
             Entry::Admins => "Membros do grupo Administradores. Nenhum aluno deve lá estar.",
             Entry::Status => "AppLocker e AppIDSvc, regras de firewall, tarefa agendada e senha.",
@@ -249,10 +258,7 @@ impl App {
             (!c.simple, "Administradores locais"),
             (c.uninstall_rustdesk, "Desinstalar o RustDesk"),
             (c.uninstall_opencode, "Desinstalar o OpenCode"),
-            (
-                c.uninstall_apps,
-                "Desinstalar jogos, Spotify, Lively e cursores",
-            ),
+            (c.clean_junk, "Limpar software não autorizado e restos"),
             (
                 c.apply_policies && !c.audit_only,
                 "AppLocker: bloquear as pastas dos utilizadores",
@@ -278,7 +284,7 @@ impl App {
                     (c.simple, "--simples"),
                     (!c.uninstall_rustdesk, "--sem-rustdesk"),
                     (!c.uninstall_opencode, "--sem-opencode"),
-                    (!c.uninstall_apps, "--sem-aplicacoes"),
+                    (!c.clean_junk, "--sem-limpeza"),
                     (!c.apply_policies, "--sem-politicas"),
                     (c.apply_policies && c.audit_only, "--so-auditoria"),
                     (!c.firewall, "--sem-firewall"),
@@ -290,6 +296,9 @@ impl App {
                 a
             }
             Entry::Audit => vec!["auditoria", "listar"],
+            Entry::Suspects => vec!["auditoria", "suspeitos"],
+            Entry::Clean => vec!["auditoria", "limpar"],
+            Entry::Evidence => vec!["auditoria", "rasto"],
             Entry::History => vec!["auditoria", "historico"],
             Entry::Admins => vec!["auditoria", "admins"],
             Entry::Status => vec!["estado"],
@@ -386,7 +395,7 @@ impl App {
             Entry::ToggleSimple => &mut c.simple,
             Entry::ToggleRustdesk => &mut c.uninstall_rustdesk,
             Entry::ToggleOpencode => &mut c.uninstall_opencode,
-            Entry::ToggleApps => &mut c.uninstall_apps,
+            Entry::ToggleClean => &mut c.clean_junk,
             Entry::TogglePolicies => &mut c.apply_policies,
             Entry::ToggleAuditOnly => &mut c.audit_only,
             Entry::ToggleFirewall => &mut c.firewall,
@@ -762,6 +771,7 @@ fn draw_detail(f: &mut Frame, app: &App, area: Rect, block: Block<'static>) {
             | Entry::ToggleSimple
             | Entry::ToggleRustdesk
             | Entry::ToggleOpencode
+            | Entry::ToggleClean
             | Entry::TogglePolicies
             | Entry::ToggleAuditOnly
             | Entry::ToggleFirewall

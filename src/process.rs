@@ -16,8 +16,9 @@ pub struct ProcessConfig {
     pub simple: bool,
     pub uninstall_rustdesk: bool,
     pub uninstall_opencode: bool,
-    /// Lista por defecto de `audit::APPS` (Lively, cursores, Roblox, Spotify...).
-    pub uninstall_apps: bool,
+    /// Limpieza de la lista negra (Roblox, Spotify, Lively, cursores...) y de
+    /// sus restos, ademas del cursor personalizado.
+    pub clean_junk: bool,
     pub apply_policies: bool,
     /// AppLocker en modo AuditOnly: registra pero no bloquea.
     pub audit_only: bool,
@@ -33,7 +34,7 @@ impl Default for ProcessConfig {
             simple: false,
             uninstall_rustdesk: true,
             uninstall_opencode: true,
-            uninstall_apps: true,
+            clean_junk: true,
             apply_policies: true,
             audit_only: false,
             firewall: true,
@@ -71,15 +72,21 @@ pub fn run(cfg: &ProcessConfig) -> Result<()> {
     if cfg.uninstall_opencode {
         targets.push("OpenCode");
     }
-    if cfg.uninstall_apps {
-        targets.extend_from_slice(audit::APPS);
-    }
     let mut failed = Vec::new();
     for name in &targets {
         println!("-- Desinstalar: {name} --");
         if let Err(e) = audit::remove(name, cfg.apply) {
             println!("[erro] {e:#}");
             failed.push(*name);
+        }
+        println!();
+    }
+
+    if cfg.clean_junk {
+        println!("-- Limpeza: software não autorizado e restos --");
+        if let Err(e) = audit::clean(cfg.apply) {
+            println!("[erro] {e:#}");
+            failed.push("lista negra");
         }
         println!();
     }
@@ -102,7 +109,7 @@ pub fn run(cfg: &ProcessConfig) -> Result<()> {
             failed.join(", ")
         );
     }
-    if cfg.apply && !targets.is_empty() {
+    if cfg.apply && (!targets.is_empty() || cfg.clean_junk) {
         println!("Histórico de desinstalações: aegn auditoria historico");
     }
     println!("================ Processo concluído ================");
