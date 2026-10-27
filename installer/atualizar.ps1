@@ -4,8 +4,9 @@
 
 .DESCRIPTION
   O MSI instala este script em C:\Program Files\AEGN e regista a tarefa
-  AEGN-Atualizar, que o executa como SYSTEM 5 minutos depois do arranque e
-  todos os dias por volta das 13:00. Como corre como SYSTEM, a atualização não
+  AEGN-Atualizar, que o executa como SYSTEM logo a seguir ao arranque, quando
+  alguém inicia sessão e todos os dias por volta das 13:00. Se a rede ainda não
+  estiver pronta, o script volta a tentar durante alguns minutos. Como corre como SYSTEM, a atualização não
   pede UAC nem a senha do AEGN.
 
   Em cada execução:
@@ -39,13 +40,16 @@ if ($Registar) {
     $acao = New-ScheduledTaskAction -Execute $ps `
         -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$PSCommandPath`""
     $arranque = New-ScheduledTaskTrigger -AtStartup
-    $arranque.Delay = 'PT5M'
+    $arranque.Delay = 'PT30S'
+    $sessao = New-ScheduledTaskTrigger -AtLogOn
     # O atraso aleatório evita que uma sala inteira descarregue ao mesmo tempo.
     $diaria = New-ScheduledTaskTrigger -Daily -At '13:00' -RandomDelay (New-TimeSpan -Minutes 60)
     $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
-    $definicoes = New-ScheduledTaskSettingsSet -StartWhenAvailable -RunOnlyIfNetworkAvailable `
+    # Sem RunOnlyIfNetworkAvailable: no arranque a rede demora a subir e o
+    # próprio script espera por ela.
+    $definicoes = New-ScheduledTaskSettingsSet -StartWhenAvailable `
         -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
-    Register-ScheduledTask -TaskName $Tarefa -Action $acao -Trigger $arranque, $diaria `
+    Register-ScheduledTask -TaskName $Tarefa -Action $acao -Trigger $arranque, $sessao, $diaria `
         -Principal $principal -Settings $definicoes -Force | Out-Null
 
     # Os utilizadores autenticados podem ler e lançar a tarefa (não alterá-la),
@@ -79,7 +83,13 @@ try {
     $base = "https://github.com/$Repo/releases"
 
     # Os links /latest/download/ não contam para o limite de pedidos da API.
-    $somas = $web.DownloadString("$base/latest/download/SHA256SUMS.txt")
+    # Logo a seguir ao arranque a rede pode ainda não estar pronta: tenta-se
+    # durante cerca de 5 minutos antes de desistir.
+    $somas = $null
+    for ($i = 1; -not $somas; $i++) {
+        try { $somas = $web.DownloadString("$base/latest/download/SHA256SUMS.txt") }
+        catch { if ($i -ge 20) { throw }; Start-Sleep -Seconds 15 }
+    }
     $linha = [regex]::Match($somas, '(?m)^([0-9a-fA-F]{64})\s+(AEGN-Security-(\d+\.\d+\.\d+)-x64\.msi)\s*$')
     if (-not $linha.Success) { throw 'o SHA256SUMS.txt do último release não indica nenhum MSI.' }
     $hash = $linha.Groups[1].Value.ToLower()

@@ -62,8 +62,9 @@ A partir da versão 0.4.0, cada computador atualiza-se sozinho a partir dos
 [releases](../../releases) deste repositório, **sem UAC nem senha**:
 
 - o MSI instala o `atualizar.ps1` em `C:\Program Files\AEGN` e regista a
-  tarefa `AEGN-Atualizar`, que corre como **SYSTEM** 5 minutos depois do
-  arranque e todos os dias entre as 13:00 e as 14:00 (o atraso aleatório evita
+  tarefa `AEGN-Atualizar`, que corre como **SYSTEM** 30 segundos depois do
+  arranque (esperando pela rede se for preciso), quando alguém inicia sessão e
+  todos os dias entre as 13:00 e as 14:00 (o atraso aleatório evita
   que uma sala inteira descarregue ao mesmo tempo);
 - se o último release tiver um MSI mais recente, descarrega-o, confirma o
   SHA-256 com o `SHA256SUMS.txt` do release e instala-o com `msiexec /qn`;
@@ -244,7 +245,7 @@ Em Windows, à mão:
 ```powershell
 cargo build --release
 dotnet tool install --global wix --version 5.0.2
-wix build installer\aegn.wxs -arch x64 -d Version=0.5.0 -d ExePath=target\release\aegn.exe -o AEGN-Security-0.5.0-x64.msi
+wix build installer\aegn.wxs -arch x64 -d Version=0.5.1 -d ExePath=target\release\aegn.exe -o AEGN-Security-0.5.1-x64.msi
 ```
 
 Em Linux pode verificar-se que o código de Windows compila (sem ligar):

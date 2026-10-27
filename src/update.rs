@@ -78,9 +78,9 @@ pub fn run(apply: bool) -> Result<()> {
         }
         if !apply {
             println!(
-                "[simulação] Há uma versão nova. A tarefa {TASK} instala-a sozinha (no arranque e"
+                "[simulação] Há uma versão nova. A tarefa {TASK} instala-a sozinha (no arranque, ao"
             );
-            println!("[simulação] por volta das 13:00). Para já: aegn atualizar --aplicar (não requer administrador).");
+            println!("[simulação] iniciar sessão e por volta das 13:00). Para já: aegn atualizar --aplicar (não requer administrador).");
             return Ok(());
         }
         let out = std::process::Command::new("schtasks")

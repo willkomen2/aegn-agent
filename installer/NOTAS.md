@@ -14,6 +14,10 @@ caso a senha fica `admin` até a alterar com `aegn senha alterar`.
 
 ### Novidades
 
+- **Atualização logo ao ligar o PC** (0.5.1): a tarefa `AEGN-Atualizar` corre
+  30 segundos depois do arranque (antes eram 5 minutos) e também ao iniciar
+  sessão; se a rede ainda não estiver pronta, tenta de novo durante 5 minutos.
+
 - **Contas Google fechadas ao terminar a sessão** (0.5.0): Chrome, Edge e
   Firefox apagam as cookies ao fechar, e com elas as contas Google (ou outras)
   que ficaram abertas; o Chrome deixa de permitir iniciar sessão no navegador
