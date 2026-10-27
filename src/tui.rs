@@ -42,11 +42,13 @@ enum Entry {
     ToggleSimple,
     ToggleRustdesk,
     ToggleOpencode,
+    ToggleApps,
     TogglePolicies,
     ToggleAuditOnly,
     ToggleFirewall,
     ToggleApply,
     Audit,
+    History,
     Admins,
     Status,
     Events,
@@ -73,12 +75,14 @@ const ENTRIES: &[Entry] = &[
     Entry::ToggleSimple,
     Entry::ToggleRustdesk,
     Entry::ToggleOpencode,
+    Entry::ToggleApps,
     Entry::TogglePolicies,
     Entry::ToggleAuditOnly,
     Entry::ToggleFirewall,
     Entry::ToggleApply,
     Entry::Header("FERRAMENTAS"),
     Entry::Audit,
+    Entry::History,
     Entry::Admins,
     Entry::Status,
     Entry::Events,
@@ -185,6 +189,12 @@ impl App {
             Entry::ToggleOpencode => {
                 format!("{} Desinstalar OpenCode", chk(self.cfg.uninstall_opencode))
             }
+            Entry::ToggleApps => {
+                format!(
+                    "{} Desinstalar Roblox, Spotify, Lively...",
+                    chk(self.cfg.uninstall_apps)
+                )
+            }
             Entry::TogglePolicies => {
                 format!("{} Políticas de execução", chk(self.cfg.apply_policies))
             }
@@ -196,6 +206,7 @@ impl App {
             }
             Entry::ToggleApply => format!("{} APLICAR DE FACTO", chk(self.cfg.apply)),
             Entry::Audit => "Auditar software instalado".to_string(),
+            Entry::History => "Histórico de desinstalações".to_string(),
             Entry::Admins => "Administradores locais".to_string(),
             Entry::Status => "Estado das proteções".to_string(),
             Entry::Events => "Eventos do AppLocker".to_string(),
@@ -213,11 +224,13 @@ impl App {
             Entry::ToggleSimple => "Salta o inventário inicial e reduz a saída.",
             Entry::ToggleRustdesk => "Inclui o RustDesk (acesso remoto) na desinstalação.",
             Entry::ToggleOpencode => "Inclui o OpenCode na desinstalação.",
+            Entry::ToggleApps => "Lively Wallpaper, Custom Cursor, CursorFX, Roblox e Spotify, em todos os perfis e na Microsoft Store.",
             Entry::TogglePolicies => "AppLocker: só se executam programas, scripts e MSI do Windows e de Program Files (os administradores, tudo). AppData\\Local e Transferências, negados.",
             Entry::ToggleAuditOnly => "AppLocker em modo auditoria: não bloqueia, só regista o que bloquearia. Use-o primeiro em cada sala e reveja os 'Eventos do AppLocker'.",
             Entry::ToggleFirewall => "Bloqueia a saída pelas portas do RustDesk, AnyDesk e TeamViewer.",
             Entry::ToggleApply => "Ativo: alterações reais (requer administrador e a senha do AEGN). Inativo: apenas simula.",
             Entry::Audit => "Lista o software instalado sem alterar nada.",
+            Entry::History => "Quando, em que perfil e como foi desinstalado cada programa.",
             Entry::Admins => "Membros do grupo Administradores. Nenhum aluno deve lá estar.",
             Entry::Status => "AppLocker e AppIDSvc, regras de firewall, tarefa agendada e senha.",
             Entry::Events => "Últimos bloqueios (e avisos de auditoria) registados pelo AppLocker.",
@@ -236,6 +249,10 @@ impl App {
             (!c.simple, "Administradores locais"),
             (c.uninstall_rustdesk, "Desinstalar o RustDesk"),
             (c.uninstall_opencode, "Desinstalar o OpenCode"),
+            (
+                c.uninstall_apps,
+                "Desinstalar Lively, Custom Cursor, CursorFX, Roblox e Spotify",
+            ),
             (
                 c.apply_policies && !c.audit_only,
                 "AppLocker: bloquear as pastas dos utilizadores",
@@ -261,6 +278,7 @@ impl App {
                     (c.simple, "--simples"),
                     (!c.uninstall_rustdesk, "--sem-rustdesk"),
                     (!c.uninstall_opencode, "--sem-opencode"),
+                    (!c.uninstall_apps, "--sem-aplicacoes"),
                     (!c.apply_policies, "--sem-politicas"),
                     (c.apply_policies && c.audit_only, "--so-auditoria"),
                     (!c.firewall, "--sem-firewall"),
@@ -272,6 +290,7 @@ impl App {
                 a
             }
             Entry::Audit => vec!["auditoria", "listar"],
+            Entry::History => vec!["auditoria", "historico"],
             Entry::Admins => vec!["auditoria", "admins"],
             Entry::Status => vec!["estado"],
             Entry::Events => vec!["politica", "eventos"],
@@ -367,6 +386,7 @@ impl App {
             Entry::ToggleSimple => &mut c.simple,
             Entry::ToggleRustdesk => &mut c.uninstall_rustdesk,
             Entry::ToggleOpencode => &mut c.uninstall_opencode,
+            Entry::ToggleApps => &mut c.uninstall_apps,
             Entry::TogglePolicies => &mut c.apply_policies,
             Entry::ToggleAuditOnly => &mut c.audit_only,
             Entry::ToggleFirewall => &mut c.firewall,

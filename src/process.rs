@@ -16,6 +16,8 @@ pub struct ProcessConfig {
     pub simple: bool,
     pub uninstall_rustdesk: bool,
     pub uninstall_opencode: bool,
+    /// Lista por defecto de `audit::APPS` (Lively, cursores, Roblox, Spotify...).
+    pub uninstall_apps: bool,
     pub apply_policies: bool,
     /// AppLocker en modo AuditOnly: registra pero no bloquea.
     pub audit_only: bool,
@@ -31,6 +33,7 @@ impl Default for ProcessConfig {
             simple: false,
             uninstall_rustdesk: true,
             uninstall_opencode: true,
+            uninstall_apps: true,
             apply_policies: true,
             audit_only: false,
             firewall: true,
@@ -60,15 +63,24 @@ pub fn run(cfg: &ProcessConfig) -> Result<()> {
         println!();
     }
 
+    // Un programa que falla no detiene la limpieza de los demas.
+    let mut targets: Vec<&str> = Vec::new();
     if cfg.uninstall_rustdesk {
-        println!("-- Desinstalar o RustDesk --");
-        audit::remove("RustDesk", cfg.apply)?;
-        println!();
+        targets.push("RustDesk");
     }
-
     if cfg.uninstall_opencode {
-        println!("-- Desinstalar o OpenCode --");
-        audit::remove("OpenCode", cfg.apply)?;
+        targets.push("OpenCode");
+    }
+    if cfg.uninstall_apps {
+        targets.extend_from_slice(audit::APPS);
+    }
+    let mut failed = Vec::new();
+    for name in &targets {
+        println!("-- Desinstalar: {name} --");
+        if let Err(e) = audit::remove(name, cfg.apply) {
+            println!("[erro] {e:#}");
+            failed.push(*name);
+        }
         println!();
     }
 
@@ -84,6 +96,15 @@ pub fn run(cfg: &ProcessConfig) -> Result<()> {
         println!();
     }
 
+    if !failed.is_empty() {
+        println!(
+            "[aviso] Não foi possível desinstalar: {}",
+            failed.join(", ")
+        );
+    }
+    if cfg.apply && !targets.is_empty() {
+        println!("Histórico de desinstalações: aegn auditoria historico");
+    }
     println!("================ Processo concluído ================");
     Ok(())
 }

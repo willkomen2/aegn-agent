@@ -98,12 +98,13 @@ Tudo o que altera o computador é **simulação** até se passar `--aplicar`.
 | Comando | O que faz |
 |---|---|
 | `aegn` / `aegn menu` | Menu interativo: saída ao vivo; em modo real pede a senha. |
-| `aegn executar` | Processo completo: inventário, administradores, desinstalação, AppLocker e firewall. Opções `--simples`, `--sem-rustdesk`, `--sem-opencode`, `--sem-politicas`, `--so-auditoria`, `--sem-firewall`, `--aplicar`. |
+| `aegn executar` | Processo completo: inventário, administradores, desinstalação, AppLocker e firewall. Opções `--simples`, `--sem-rustdesk`, `--sem-opencode`, `--sem-aplicacoes`, `--sem-politicas`, `--so-auditoria`, `--sem-firewall`, `--aplicar`. |
 | `aegn estado` | Estado do AppLocker/AppIDSvc, regras de firewall, tarefa agendada e senha. |
 | `aegn reverter` | Desfaz tudo o que o agente aplicou (não reinstala software). |
-| `aegn auditoria listar` | Inventário do software instalado (chaves Uninstall do registo). |
+| `aegn auditoria listar` | Inventário do software instalado (computador e perfis com sessão aberta), software não autorizado encontrado e últimas desinstalações. |
+| `aegn auditoria historico [--max N]` | Quando, em que perfil e como foi desinstalado cada programa. |
 | `aegn auditoria admins` | Membros do grupo local de Administradores. |
-| `aegn auditoria remover <nome>` | Desinstala software não autorizado (winget, ou a UninstallString). |
+| `aegn auditoria remover <nome>` | Desinstala software não autorizado em todos os perfis e na Microsoft Store. |
 | `aegn politica impor [--so-auditoria]` | Política AppLocker (Exe, Script e MSI). |
 | `aegn politica eventos [--max N]` | Últimos bloqueios e avisos de auditoria do AppLocker. |
 | `aegn politica estado` / `reverter` | Estado / remoção das regras AppLocker AEGN. |
@@ -125,6 +126,28 @@ continuam a funcionar.
 4. `aegn executar --aplicar`: ativa o bloqueio.
 5. `aegn tarefa instalar --aplicar`: o computador corrige-se sozinho todos os
    dias. Registo em `C:\Program Files\AEGN\logs\aegn.log`.
+
+## Software não autorizado
+
+O `aegn executar` desinstala por defeito o **RustDesk**, o **OpenCode**,
+o **Lively Wallpaper**, o **Custom Cursor**, o **CursorFX**, o **Roblox** e o
+**Spotify** (a lista está em `src/audit.rs`, `APPS`). Para cada um:
+
+- instalação do computador: o desinstalador do próprio programa, em silêncio;
+- instalação por utilizador (Roblox, Spotify...): em **todos os perfis**,
+  mesmo sem sessão aberta, fecha o programa e apaga a sua pasta de AppData e a
+  entrada do registo (o desinstalador correria no perfil do administrador);
+- versão da Microsoft Store: `Remove-AppxPackage` para todos os utilizadores.
+
+Cada desinstalação fica em `C:\Program Files\AEGN\logs\desinstalacoes.csv`
+(data, computador, perfil, programa, versão, método e resultado), que o
+`aegn auditoria historico` e o `aegn auditoria listar` mostram.
+
+```powershell
+aegn auditoria listar                 # o que há e o que não é autorizado
+aegn executar --simples --aplicar     # desinstalar já (e aplicar as proteções)
+aegn auditoria historico              # o que foi desinstalado e quando
+```
 
 ## Proteções
 
@@ -170,7 +193,7 @@ Em Windows, à mão:
 ```powershell
 cargo build --release
 dotnet tool install --global wix --version 5.0.2
-wix build installer\aegn.wxs -arch x64 -d Version=0.3.0 -d ExePath=target\release\aegn.exe -o AEGN-Security-0.3.0-x64.msi
+wix build installer\aegn.wxs -arch x64 -d Version=0.4.0 -d ExePath=target\release\aegn.exe -o AEGN-Security-0.4.0-x64.msi
 ```
 
 Em Linux pode verificar-se que o código de Windows compila (sem ligar):

@@ -13,7 +13,7 @@ estándar, con mecanismos nativos y auditables de Windows. **No hay dimensión
 ofensiva de ciberseguridad**: nada de sigilo, exfiltración ni evasión; todo es
 transparente y reversible.
 
-## Estado actual (v0.3.0)
+## Estado actual (v0.4.0)
 
 ```
 src/
@@ -21,7 +21,7 @@ src/
   auth.rs      Contraseña de administración (PBKDF2 en HKLM; por defecto "admin")
   tui.rs       Menú TUI: salida en vivo; en modo real pide la contraseña
   process.rs   Orquesta la rutina (inventario → desinstalar → AppLocker → firewall)
-  audit.rs     Inventario, administradores locales, desinstalar (winget + UninstallString)
+  audit.rs     Inventario, admins, desinstalar (máquina, todos los perfiles, Store) e historial CSV
   policy.rs    AppLocker Exe/Script/Msi, modo auditoría, eventos, revert
   firewall.rs  Bloqueo saliente de RustDesk/AnyDesk/TeamViewer
   schedule.rs  Tarea SYSTEM diaria (solo si aegn.exe está en Program Files)
@@ -46,7 +46,7 @@ admin; el workflow solo compila y ejecuta los tests en Windows.
 | Tema | Decisión | Motivo |
 |---|---|---|
 | Restricción de ejecución | AppLocker (reglas de ruta) | Método soportado por Microsoft, auditable, reversible. |
-| Desinstalación | winget primero, luego `UninstallString` | Cubre software moderno y legado. |
+| Desinstalación | `UninstallString` de máquina; apps por usuario: borrar su carpeta de AppData en cada perfil (cargando NTUSER.DAT); Store: `Remove-AppxPackage -AllUsers`; winget solo si nada coincide | El desinstalador de una app por usuario correría en el perfil del admin, no en el del alumno. |
 | Contraseña | Hash PBKDF2 en HKLM | Solo admins escriben; protege de uso casual, no de un admin decidido. |
 | Instalación | MSI en `C:\Program Files\AEGN` + PATH del sistema | La tarea SYSTEM exige una ruta no escribible por usuarios. |
 | Compilación | GitHub Actions `windows-latest` | En Linux no hay linker de Windows. |
@@ -58,7 +58,8 @@ admin; el workflow solo compila y ejecuta los tests en Windows.
 
 1. **Probar en Windows real con admin**: instalador, contraseña, AppLocker,
    AppIDSvc, firewall y tarea.
-2. **Lista de software no autorizado configurable** (`aegn.toml`).
+2. **Lista de software no autorizado configurable** (`aegn.toml`); hoy es
+   `audit::APPS` y cambiarla exige un release.
 3. **Fallback SRP** para Windows Home (sin AppLocker).
 4. **Informe por ejecución** en disco.
 5. **Firmar el MSI** (Authenticode) y comprobar la firma en `atualizar.ps1`:

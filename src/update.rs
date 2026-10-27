@@ -66,7 +66,9 @@ pub fn run(apply: bool) -> Result<()> {
             anyhow::anyhow!("não foi possível consultar os releases de github.com/{REPO}: {e}")
         })?;
         let Some(latest) = version_in_sums(&sums) else {
-            anyhow::bail!("o último release de github.com/{REPO} não tem nenhum MSI no SHA256SUMS.txt");
+            anyhow::bail!(
+                "o último release de github.com/{REPO} não tem nenhum MSI no SHA256SUMS.txt"
+            );
         };
         println!("Versão instalada: {VERSION}");
         println!("Último release:   {latest}");
@@ -75,7 +77,9 @@ pub fn run(apply: bool) -> Result<()> {
             return Ok(());
         }
         if !apply {
-            println!("[simulação] Há uma versão nova. A tarefa {TASK} instala-a sozinha (no arranque e");
+            println!(
+                "[simulação] Há uma versão nova. A tarefa {TASK} instala-a sozinha (no arranque e"
+            );
             println!("[simulação] por volta das 13:00). Para já: aegn atualizar --aplicar (não requer administrador).");
             return Ok(());
         }

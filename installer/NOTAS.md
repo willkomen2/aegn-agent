@@ -14,11 +14,15 @@ caso a senha fica `admin` até a alterar com `aegn senha alterar`.
 
 ### Novidades
 
-- **Atualização automática**: a tarefa `AEGN-Atualizar` (SYSTEM) instala
-  sozinha as versões novas publicadas no GitHub, sem UAC nem senha. Para
-  atualizar já: `aegn atualizar --aplicar`; estado: `aegn atualizar estado`.
+- **Desinstalação por defeito** de Lively Wallpaper, Custom Cursor, CursorFX,
+  Roblox e Spotify (além de RustDesk e OpenCode), em todos os perfis de
+  utilizador e na Microsoft Store. Desativar: `--sem-aplicacoes`.
+- **Histórico de desinstalações**: `aegn auditoria historico` mostra quando, em
+  que perfil e como foi desinstalado cada programa; o `auditoria listar` mostra
+  também o software não autorizado encontrado.
+- **Atualização automática** (desde a 0.3.0): a tarefa `AEGN-Atualizar`
+  (SYSTEM) instala as versões novas do GitHub sem UAC nem senha.
 - A senha de administração já não se perde ao atualizar com o MSI.
-- Quem tem a 0.2.0 instala esta versão uma vez à mão; as seguintes chegam sozinhas.
 
 ### Ficheiros
 

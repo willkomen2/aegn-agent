@@ -59,6 +59,9 @@ enum Command {
         /// Não desinstalar o OpenCode.
         #[arg(long, alias = "no-opencode")]
         sem_opencode: bool,
+        /// Não desinstalar as aplicações por defeito (Lively Wallpaper, Custom Cursor, CursorFX, Roblox, Spotify).
+        #[arg(long)]
+        sem_aplicacoes: bool,
         /// Não aplicar as políticas de execução (AppLocker).
         #[arg(long, alias = "no-policies")]
         sem_politicas: bool,
@@ -142,6 +145,13 @@ enum AuditAction {
     Listar,
     /// Lista os membros do grupo local de Administradores.
     Admins,
+    /// Quando e onde foi desinstalado cada programa.
+    #[command(alias = "history")]
+    Historico {
+        /// Número máximo de linhas.
+        #[arg(long, default_value_t = 50)]
+        max: u32,
+    },
     /// Desinstala um programa não autorizado pelo nome (ex.: RustDesk, OpenCode).
     #[command(alias = "remove")]
     Remover {
@@ -309,6 +319,7 @@ fn main() -> Result<()> {
             simples,
             sem_rustdesk,
             sem_opencode,
+            sem_aplicacoes,
             sem_politicas,
             so_auditoria,
             sem_firewall,
@@ -317,6 +328,7 @@ fn main() -> Result<()> {
             simple: simples,
             uninstall_rustdesk: !sem_rustdesk,
             uninstall_opencode: !sem_opencode,
+            uninstall_apps: !sem_aplicacoes,
             apply_policies: !sem_politicas,
             audit_only: so_auditoria,
             firewall: !sem_firewall,
@@ -325,6 +337,7 @@ fn main() -> Result<()> {
         Some(Command::Auditoria { action }) => match action {
             AuditAction::Listar => audit::list()?,
             AuditAction::Admins => audit::admins()?,
+            AuditAction::Historico { max } => audit::history(max)?,
             AuditAction::Remover { nome, aplicar } => audit::remove(&nome, aplicar)?,
         },
         Some(Command::Politica { action }) => match action {
@@ -384,6 +397,8 @@ mod tests {
         assert!(parse(&["tarefa", "instalar", "--aplicar"]).applies());
         assert!(!parse(&["estado"]).applies());
         assert!(!parse(&["politica", "eventos"]).applies());
+        assert!(!parse(&["auditoria", "historico"]).applies());
+        assert!(parse(&["executar", "--sem-aplicacoes", "--aplicar"]).applies());
         // Instala o release oficial pela tarefa SYSTEM: não pede a senha.
         assert!(!parse(&["atualizar", "--aplicar"]).applies());
         assert!(!parse(&["atualizar", "estado"]).applies());
