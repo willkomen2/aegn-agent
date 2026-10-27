@@ -40,12 +40,27 @@ enum Entry {
     ToggleRustdesk,
     ToggleOpencode,
     TogglePolicies,
+    ToggleAuditOnly,
+    ToggleFirewall,
     ToggleApply,
     Audit,
-    PolicyStatus,
-    PolicyRevert,
+    Admins,
+    Status,
+    Events,
+    ScheduleInstall,
+    RevertAll,
     GhWhoami,
     Quit,
+}
+
+impl Entry {
+    /// Acciones que cambian el equipo con --apply y piden confirmacion.
+    fn destructive(self) -> bool {
+        matches!(
+            self,
+            Entry::Start | Entry::ScheduleInstall | Entry::RevertAll
+        )
+    }
 }
 
 const ENTRIES: &[Entry] = &[
@@ -56,11 +71,16 @@ const ENTRIES: &[Entry] = &[
     Entry::ToggleRustdesk,
     Entry::ToggleOpencode,
     Entry::TogglePolicies,
+    Entry::ToggleAuditOnly,
+    Entry::ToggleFirewall,
     Entry::ToggleApply,
     Entry::Header("HERRAMIENTAS"),
     Entry::Audit,
-    Entry::PolicyStatus,
-    Entry::PolicyRevert,
+    Entry::Admins,
+    Entry::Status,
+    Entry::Events,
+    Entry::ScheduleInstall,
+    Entry::RevertAll,
     Entry::GhWhoami,
     Entry::Quit,
 ];
@@ -156,10 +176,19 @@ impl App {
             Entry::TogglePolicies => {
                 format!("{} Politicas de ejecucion", chk(self.cfg.apply_policies))
             }
+            Entry::ToggleAuditOnly => {
+                format!("  {} solo auditar (no bloquea)", chk(self.cfg.audit_only))
+            }
+            Entry::ToggleFirewall => {
+                format!("{} Firewall: acceso remoto", chk(self.cfg.firewall))
+            }
             Entry::ToggleApply => format!("{} APLICAR DE VERDAD", chk(self.cfg.apply)),
             Entry::Audit => "Auditar software instalado".to_string(),
-            Entry::PolicyStatus => "Estado de politicas".to_string(),
-            Entry::PolicyRevert => "Revertir politicas AEGN".to_string(),
+            Entry::Admins => "Administradores locales".to_string(),
+            Entry::Status => "Estado de protecciones".to_string(),
+            Entry::Events => "Eventos AppLocker".to_string(),
+            Entry::ScheduleInstall => "Instalar tarea diaria".to_string(),
+            Entry::RevertAll => "Revertir todo lo de AEGN".to_string(),
             Entry::GhWhoami => "GitHub: verificar token".to_string(),
             Entry::Quit => "Salir".to_string(),
         }
@@ -172,11 +201,16 @@ impl App {
             Entry::ToggleSimple => "Omite el inventario previo y reduce la salida.",
             Entry::ToggleRustdesk => "Incluye RustDesk (acceso remoto) en la desinstalacion.",
             Entry::ToggleOpencode => "Incluye OpenCode en la desinstalacion.",
-            Entry::TogglePolicies => "Bloquea .exe en AppData\\Local y Downloads con AppLocker.",
+            Entry::TogglePolicies => "AppLocker: solo se ejecutan programas, scripts y MSI de Windows y Program Files (los admins, todo). AppData\\Local y Downloads, denegados.",
+            Entry::ToggleAuditOnly => "AppLocker en modo auditoria: no bloquea, solo registra lo que bloquearia. Usalo primero en cada aula y revisa 'Eventos AppLocker'.",
+            Entry::ToggleFirewall => "Bloquea la salida por los puertos de RustDesk, AnyDesk y TeamViewer.",
             Entry::ToggleApply => "Activo: cambios reales (requiere admin). Inactivo: solo simula.",
             Entry::Audit => "Lista el software instalado sin cambiar nada.",
-            Entry::PolicyStatus => "Muestra el estado de AppLocker y del servicio AppIDSvc.",
-            Entry::PolicyRevert => "Retira solo las reglas AppLocker con la etiqueta AEGN.",
+            Entry::Admins => "Miembros del grupo Administradores. Ningun alumno debe estar.",
+            Entry::Status => "AppLocker y AppIDSvc, reglas de firewall y tarea programada.",
+            Entry::Events => "Ultimos bloqueos (y avisos de auditoria) registrados por AppLocker.",
+            Entry::ScheduleInstall => "Tarea SYSTEM que reaplica el proceso al arrancar y a diario. Requiere aegn.exe en Program Files.",
+            Entry::RevertAll => "Retira las reglas AppLocker y de firewall AEGN y la tarea programada.",
             Entry::GhWhoami => "Verifica GITHUB_TOKEN e identifica al usuario.",
             Entry::Quit => "Cierra el agente.",
         }
@@ -187,12 +221,18 @@ impl App {
         let c = &self.cfg;
         [
             (!c.simple, "Inventario de software"),
+            (!c.simple, "Administradores locales"),
             (c.uninstall_rustdesk, "Desinstalar RustDesk"),
             (c.uninstall_opencode, "Desinstalar OpenCode"),
             (
-                c.apply_policies,
-                "Politica AppLocker en carpetas de usuario",
+                c.apply_policies && !c.audit_only,
+                "AppLocker: bloquear carpetas de usuario",
             ),
+            (
+                c.apply_policies && c.audit_only,
+                "AppLocker en modo auditoria",
+            ),
+            (c.firewall, "Firewall: puertos de acceso remoto"),
         ]
         .into_iter()
         .filter_map(|(on, step)| on.then_some(step))
@@ -210,6 +250,8 @@ impl App {
                     (!c.uninstall_rustdesk, "--no-rustdesk"),
                     (!c.uninstall_opencode, "--no-opencode"),
                     (!c.apply_policies, "--no-policies"),
+                    (c.apply_policies && c.audit_only, "--audit-only"),
+                    (!c.firewall, "--no-firewall"),
                 ] {
                     if on {
                         a.push(flag);
@@ -218,12 +260,16 @@ impl App {
                 a
             }
             Entry::Audit => vec!["audit", "list"],
-            Entry::PolicyStatus => vec!["policy", "status"],
-            Entry::PolicyRevert => vec!["policy", "revert"],
+            Entry::Admins => vec!["audit", "admins"],
+            Entry::Status => vec!["status"],
+            Entry::Events => vec!["policy", "events"],
+            Entry::ScheduleInstall if c.audit_only => vec!["schedule", "install", "--audit-only"],
+            Entry::ScheduleInstall => vec!["schedule", "install"],
+            Entry::RevertAll => vec!["revert"],
             Entry::GhWhoami => vec!["gh", "whoami"],
             _ => return None,
         };
-        if c.apply && matches!(entry, Entry::Start | Entry::PolicyRevert) {
+        if c.apply && entry.destructive() {
             args.push("--apply");
         }
         Some(args)
@@ -242,8 +288,7 @@ impl App {
             self.notice = Some("No hay ningun paso marcado en Opciones.".into());
             return Ok(());
         }
-        let destructive = matches!(entry, Entry::Start | Entry::PolicyRevert);
-        if self.cfg.apply && destructive {
+        if self.cfg.apply && entry.destructive() {
             self.confirm = Some(entry);
             return Ok(());
         }
@@ -255,10 +300,8 @@ impl App {
             return Ok(());
         };
         let title = match entry {
-            Entry::Start | Entry::PolicyRevert if args.contains(&"--apply") => {
-                format!("{} [REAL]", self.label(entry))
-            }
-            Entry::Start | Entry::PolicyRevert => format!("{} [dry-run]", self.label(entry)),
+            _ if args.contains(&"--apply") => format!("{} [REAL]", self.label(entry)),
+            e if e.destructive() => format!("{} [dry-run]", self.label(entry)),
             _ => self.label(entry),
         };
         self.notice = None;
@@ -274,6 +317,8 @@ impl App {
             Entry::ToggleRustdesk => &mut c.uninstall_rustdesk,
             Entry::ToggleOpencode => &mut c.uninstall_opencode,
             Entry::TogglePolicies => &mut c.apply_policies,
+            Entry::ToggleAuditOnly => &mut c.audit_only,
+            Entry::ToggleFirewall => &mut c.firewall,
             Entry::ToggleApply => &mut c.apply,
             _ => return false,
         };
@@ -646,6 +691,8 @@ fn draw_detail(f: &mut Frame, app: &App, area: Rect, block: Block<'static>) {
             | Entry::ToggleRustdesk
             | Entry::ToggleOpencode
             | Entry::TogglePolicies
+            | Entry::ToggleAuditOnly
+            | Entry::ToggleFirewall
             | Entry::ToggleApply
     );
     if shows_plan {

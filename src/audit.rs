@@ -40,6 +40,39 @@ Get-ItemProperty $paths -ErrorAction SilentlyContinue |
     }
 }
 
+/// Lista los miembros del grupo local de Administradores. Un alumno que sea
+/// administrador puede saltarse AppLocker y el firewall, asi que no debe haber
+/// ninguno.
+pub fn admins() -> Result<()> {
+    #[cfg(windows)]
+    {
+        // Get-LocalGroupMember falla con SIDs huerfanos o cuentas de Entra ID;
+        // en ese caso se recurre a ADSI. El grupo se busca por SID para no
+        // depender del idioma ("Administradores", "Administrators"...).
+        let ps = r#"
+$members = try {
+  Get-LocalGroupMember -SID 'S-1-5-32-544' -ErrorAction Stop |
+    ForEach-Object { $_.Name + "  (" + $_.ObjectClass + ", " + $_.PrincipalSource + ")" }
+} catch {
+  $g = (New-Object Security.Principal.SecurityIdentifier 'S-1-5-32-544').Translate([Security.Principal.NTAccount]).Value.Split('\')[-1]
+  ([ADSI]"WinNT://./$g,group").Invoke('Members') |
+    ForEach-Object { $_.GetType().InvokeMember('AdsPath', 'GetProperty', $null, $_, $null) }
+}
+Write-Output "--- Administradores locales ---"
+$members | ForEach-Object { "  " + $_ }
+Write-Output "[nota] Ningun alumno debe estar en este grupo: un administrador puede saltarse AppLocker y el firewall."
+"#;
+        print!("{}", crate::ps::run(ps)?);
+        Ok(())
+    }
+
+    #[cfg(not(windows))]
+    {
+        println!("[info] La lista de administradores locales solo esta disponible en Windows.");
+        Ok(())
+    }
+}
+
 /// Desinstala un programa no autorizado por nombre. Dry-run salvo `apply`.
 ///
 /// En Windows el dry-run tambien busca en el registro, para mostrar que
