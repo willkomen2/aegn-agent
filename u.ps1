@@ -2,7 +2,7 @@
 # PowerShell de administrador:
 #   irm https://raw.githubusercontent.com/willkomen2/aegn-agent/main/u.ps1 | iex
 $ErrorActionPreference = 'Stop'
-if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole('Administrators')) {
+if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Host 'Abra o PowerShell como administrador.' -ForegroundColor Red
     return
 }
