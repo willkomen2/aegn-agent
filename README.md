@@ -1,110 +1,141 @@
-# aegn-agent
+# AEGN Security
 
-Agente interno de administración y seguridad de endpoints para el parque
-informático de la **Escola AEGN**. Herramienta de línea de comandos (CLI/TUI) en
-Rust para que el administrador de sistemas mantenga las máquinas de la escuela
-como material de estudio.
+Sistema de segurança dos computadores da **Escola AEGN**. É uma ferramenta de
+linha de comandos com menu interativo (CLI/TUI), escrita em Rust, para que o
+administrador de sistemas mantenha os computadores da escola como material de
+estudo.
 
 > [!NOTE]
-> Herramienta de administración de equipos **propiedad de la escuela**. Usa
-> mecanismos nativos y auditables de Windows (winget, AppLocker, registro). No
-> es software oculto: las acciones son transparentes y reversibles, y el
-> despliegue debe acompañarse de la política de uso aceptable de la escuela.
+> Ferramenta de administração de computadores **propriedade da escola**. Usa
+> mecanismos nativos e auditáveis do Windows (winget, AppLocker, Firewall do
+> Windows, Agendador de Tarefas). Não é software oculto: as ações são
+> transparentes e reversíveis, e a implantação deve acompanhar a política de
+> utilização aceitável da escola.
 
-## Funciones
+## Instalação
 
-Todo lo que cambia el equipo es **dry-run** hasta que se pasa `--apply`.
+Descarregue o `AEGN-Security-<versão>-windows.zip` da página de
+[releases](../../releases), extraia-o e:
 
-| Comando | Qué hace |
+1. Clique com o botão direito em **`instalar.cmd`** → **Executar como administrador**.
+2. Defina a senha de administração do AEGN (Enter = `admin`).
+
+O instalador:
+
+- instala o `aegn.exe` em `C:\Program Files\AEGN` (só os administradores
+  escrevem lá, o que a tarefa diária exige);
+- adiciona essa pasta ao **PATH do sistema**: em qualquer consola nova basta
+  escrever `aegn`;
+- numa atualização, pede primeiro a senha atual.
+
+Para desinstalar: **`desinstalar.cmd`** como administrador. Pede a senha e
+pergunta se deve reverter as proteções antes de remover o programa.
+
+Implantação em massa (GPO, Intune): o MSI instala-se sem interação com
+`msiexec /i AEGN-Security-<versão>-x64.msi /qn`. A senha fica `admin` até
+alguém a alterar com `aegn senha alterar`.
+
+## Senha de administração
+
+Tudo o que altera o computador (`--aplicar`) pede a senha do AEGN, além da
+consola de administrador. Por defeito é **`admin`**.
+
+```powershell
+aegn senha alterar     # pede a atual e a nova
+aegn senha estado      # avisa se ainda é a de defeito
+```
+
+- Guarda-se apenas o hash (PBKDF2-HMAC-SHA256 com sal) em
+  `HKLM\SOFTWARE\AEGN\Seguranca`.
+- A tarefa diária corre como SYSTEM e não precisa da senha.
+- Em scripts, a senha pode passar-se na variável `AEGN_SENHA`.
+- Limite: um administrador do Windows que apague essa chave volta à senha
+  `admin`. A senha protege do uso casual ou acidental, não de um
+  administrador decidido. O essencial continua a ser que **nenhum aluno seja
+  administrador**.
+
+## Comandos
+
+Tudo o que altera o computador é **simulação** até se passar `--aplicar`.
+
+| Comando | O que faz |
 |---|---|
-| `aegn` / `aegn menu` | Menú interactivo (TUI): salida en vivo, confirmación en modo real. |
-| `aegn run` | Proceso completo: inventario, administradores, desinstalación, AppLocker y firewall. Flags `--simple`, `--no-rustdesk`, `--no-opencode`, `--no-policies`, `--audit-only`, `--no-firewall`, `--apply`. |
-| `aegn status` | Estado de AppLocker/AppIDSvc, reglas de firewall y tarea programada. |
-| `aegn revert` | Deshace todo lo aplicado por el agente (no reinstala software). |
-| `aegn audit list` | Inventario de software instalado (claves Uninstall del registro). |
-| `aegn audit admins` | Miembros del grupo local de Administradores. |
-| `aegn audit remove <nombre>` | Desinstala software no autorizado (winget, con fallback a la UninstallString). |
-| `aegn policy enforce [--audit-only]` | Política AppLocker (Exe, Script y MSI). |
-| `aegn policy events [--max N]` | Últimos bloqueos y avisos de auditoría de AppLocker. |
-| `aegn policy status` / `revert` | Estado / retirada de las reglas AppLocker AEGN. |
-| `aegn firewall status` / `enforce` / `revert` | Bloqueo saliente de RustDesk, AnyDesk y TeamViewer. |
-| `aegn schedule install [--audit-only]` / `status` / `remove` | Tarea SYSTEM que reaplica el proceso al arrancar y a diario. |
-| `aegn gh whoami` | Verifica el token leyendo `GITHUB_TOKEN`. |
+| `aegn` / `aegn menu` | Menu interativo: saída ao vivo; em modo real pede a senha. |
+| `aegn executar` | Processo completo: inventário, administradores, desinstalação, AppLocker e firewall. Opções `--simples`, `--sem-rustdesk`, `--sem-opencode`, `--sem-politicas`, `--so-auditoria`, `--sem-firewall`, `--aplicar`. |
+| `aegn estado` | Estado do AppLocker/AppIDSvc, regras de firewall, tarefa agendada e senha. |
+| `aegn reverter` | Desfaz tudo o que o agente aplicou (não reinstala software). |
+| `aegn auditoria listar` | Inventário do software instalado (chaves Uninstall do registo). |
+| `aegn auditoria admins` | Membros do grupo local de Administradores. |
+| `aegn auditoria remover <nome>` | Desinstala software não autorizado (winget, ou a UninstallString). |
+| `aegn politica impor [--so-auditoria]` | Política AppLocker (Exe, Script e MSI). |
+| `aegn politica eventos [--max N]` | Últimos bloqueios e avisos de auditoria do AppLocker. |
+| `aegn politica estado` / `reverter` | Estado / remoção das regras AppLocker AEGN. |
+| `aegn firewall estado` / `impor` / `reverter` | Bloqueio de saída do RustDesk, AnyDesk e TeamViewer. |
+| `aegn tarefa instalar [--so-auditoria]` / `estado` / `remover` | Tarefa SYSTEM que volta a aplicar o processo no arranque e todos os dias. |
+| `aegn senha alterar` / `estado` / `verificar` | Senha de administração do AEGN. |
 
-## Despliegue recomendado en un aula
+Os nomes da versão 0.1 (`run`, `status`, `policy enforce`, `--apply`…)
+continuam a funcionar.
 
-1. Copiar `aegn.exe` a `C:\Program Files\aegn\` (fuera de las carpetas
-   bloqueadas y no modificable por alumnos).
-2. `aegn run --audit-only --apply`: AppLocker solo registra, no bloquea.
-3. Usar los equipos unos días y revisar `aegn policy events`: cada línea
-   `AUDIT` es algo que se bloquearía (Teams, OneDrive o VS Code instalados por
-   usuario, scripts de inicio de sesión…).
-4. `aegn run --apply`: activa el bloqueo.
-5. `aegn schedule install --apply`: el equipo se corrige solo cada día.
-   Log en `C:\Program Files\aegn\logs\aegn.log`.
+## Implantação recomendada numa sala
 
-## Protecciones
+1. Instalar com o `instalar.cmd` e mudar a senha.
+2. `aegn executar --so-auditoria --aplicar`: o AppLocker só regista, não bloqueia.
+3. Usar os computadores alguns dias e rever `aegn politica eventos`: cada
+   linha `AUDIT` é algo que seria bloqueado (Teams, OneDrive ou VS Code
+   instalados por utilizador, scripts de início de sessão…).
+4. `aegn executar --aplicar`: ativa o bloqueio.
+5. `aegn tarefa instalar --aplicar`: o computador corrige-se sozinho todos os
+   dias. Registo em `C:\Program Files\AEGN\logs\aegn.log`.
 
-- **AppLocker** (Exe, Script y MSI): solo se ejecuta lo que está en `%WINDIR%`
-  o `%PROGRAMFILES%` (MSI: `%WINDIR%\Installer`); los administradores pueden
-  todo. Así quedan bloqueados `.exe`, `.ps1/.bat/.cmd/.vbs/.js` y `.msi` desde
-  Descargas, Escritorio, AppData, Documentos o un USB. AppData\Local y
-  Downloads llevan además un Deny explícito que aplica **también a los
-  administradores**.
-- **Firewall**: bloqueo saliente de los puertos de RustDesk (21114-21119),
-  AnyDesk (6568) y TeamViewer (5938). AnyDesk y TeamViewer pueden salir por
-  443; para cortarlos del todo hace falta filtrado por dominio (proxy o DNS).
-- **Administradores locales**: el inventario los lista. Un alumno que sea
-  administrador puede saltarse todo lo anterior.
-- **Tarea programada**: corre como SYSTEM, así que solo se instala si
-  `aegn.exe` está dentro de Program Files; si un usuario pudiera sustituir el
-  ejecutable, sería una escalada de privilegios.
+## Proteções
 
-## Seguridad y diseño
+- **AppLocker** (Exe, Script e MSI): só se executa o que está em `%WINDIR%`
+  ou `%PROGRAMFILES%` (MSI: `%WINDIR%\Installer`); os administradores podem
+  tudo. Ficam assim bloqueados `.exe`, `.ps1/.bat/.cmd/.vbs/.js` e `.msi`
+  vindos de Transferências, Ambiente de Trabalho, AppData, Documentos ou uma
+  pen USB. AppData\Local e Transferências têm ainda um Deny explícito que se
+  aplica **também aos administradores**.
+- **Firewall**: bloqueio de saída das portas do RustDesk (21114-21119),
+  AnyDesk (6568) e TeamViewer (5938). O AnyDesk e o TeamViewer podem sair pela
+  porta 443; para os cortar de vez é preciso filtrar por domínio (proxy ou DNS).
+- **Administradores locais**: o inventário lista-os. Um aluno que seja
+  administrador consegue contornar tudo o resto.
+- **Tarefa agendada**: corre como SYSTEM, por isso só se instala se o
+  `aegn.exe` estiver dentro de Program Files; se um utilizador pudesse
+  substituir o executável, seria uma escalada de privilégios.
 
-- **Dry-run por defecto**: nada cambia el equipo sin `--apply`.
-- **Reversible**: AppLocker y firewall solo tocan sus reglas propias
-  (`AEGN-Deny-UserFolders`, grupo `AEGN-RemoteAccess`); el resto de la
-  política local se conserva. `aegn revert --apply` lo deshace todo.
-- **Credenciales**: el PAT de GitHub se lee exclusivamente de la variable de
-  entorno `GITHUB_TOKEN`; nunca se acepta por argumento ni se imprime.
-- **Privilegios**: las operaciones de sistema requieren consola de
-  administrador en Windows.
-- **Ediciones**: AppLocker solo actúa en Windows Pro/Enterprise/Education.
+> [!WARNING]
+> Num computador com o AppLocker já ativo, um `instalar.cmd` dentro de
+> Transferências só corre com **Executar como administrador** (os scripts fora
+> de Windows e Program Files estão bloqueados para quem não é administrador).
+
+## Segurança e desenho
+
+- **Simulação por defeito**: nada muda no computador sem `--aplicar` e a senha.
+- **Reversível**: o AppLocker e o firewall só tocam nas regras próprias
+  (`AEGN-Deny-UserFolders`, grupo `AEGN-RemoteAccess`); o resto da política
+  local mantém-se. `aegn reverter --aplicar` desfaz tudo.
+- **Privilégios**: as operações de sistema exigem consola de administrador.
+- **Edições**: o AppLocker só atua no Windows Pro/Enterprise/Education.
 
 ## Compilar
 
-```bash
+Os releases compilam-se no GitHub Actions (`.github/workflows/release.yml`)
+ao subir uma etiqueta `vX.Y.Z`, que tem de coincidir com a versão do
+`Cargo.toml`. O workflow gera o `aegn.exe`, o MSI (WiX 5) e o zip.
+
+Em Windows, à mão:
+
+```powershell
 cargo build --release
+dotnet tool install --global wix --version 5.0.2
+wix build installer\aegn.wxs -arch x64 -d Version=0.2.0 -d ExePath=target\release\aegn.exe -o AEGN-Security-0.2.0-x64.msi
 ```
 
-El binario queda en `target/release/aegn`.
-
-Desde Linux se puede comprobar que el código de Windows compila (sin enlazar):
+Em Linux pode verificar-se que o código de Windows compila (sem ligar):
 
 ```bash
-scripts/check-windows.sh          # cargo check
-scripts/check-windows.sh clippy   # cargo clippy
-```
-
-## Instalar en el PATH (Windows)
-
-Copia `aegn.exe` a una carpeta ya incluida en el PATH, o añade su carpeta:
-
-```powershell
-# Como administrador, instalar para toda la máquina:
-Copy-Item .\target\release\aegn.exe 'C:\Program Files\AEGN\aegn.exe'
-[Environment]::SetEnvironmentVariable(
-  'Path',
-  [Environment]::GetEnvironmentVariable('Path','Machine') + ';C:\Program Files\AEGN',
-  'Machine')
-```
-
-Abre una consola nueva y `aegn --help` debería funcionar desde cualquier ruta.
-
-## Uso de la API de GitHub
-
-```powershell
-$env:GITHUB_TOKEN = '<tu_PAT>'   # token con scope repo
-aegn gh whoami
+cargo test
+scripts/check-windows.sh clippy
 ```

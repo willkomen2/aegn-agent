@@ -1,0 +1,66 @@
+# Compila AEGN Security en Windows, genera el MSI y publica un release.
+# Se lanza al subir una etiqueta vX.Y.Z (o a mano desde la pestaña Actions,
+# que solo deja los ficheros como artefacto, sin release).
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Tests y clippy
+        run: |
+          cargo test --locked
+          cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Compilar aegn.exe
+        run: cargo build --release --locked
+
+      - name: Generar MSI y paquete
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet tool install --global wix --version 5.0.2
+          $v = (cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).packages[0].version
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$v") {
+            throw "La etiqueta $env:GITHUB_REF_NAME no coincide con la versión de Cargo.toml ($v)."
+          }
+          New-Item -ItemType Directory dist, pkg | Out-Null
+          $msi = "AEGN-Security-$v-x64.msi"
+          wix build installer/aegn.wxs -arch x64 -d Version=$v -d ExePath=target/release/aegn.exe -o "dist/$msi"
+          if ($LASTEXITCODE -ne 0) { throw "wix build falló ($LASTEXITCODE)" }
+          Copy-Item "dist/$msi", installer/instalar.ps1, installer/instalar.cmd, installer/desinstalar.cmd pkg/
+          Compress-Archive -Path pkg/* -DestinationPath "dist/AEGN-Security-$v-windows.zip"
+          Copy-Item target/release/aegn.exe dist/
+          Copy-Item installer/instalar.ps1 dist/
+          Get-ChildItem dist -File | ForEach-Object {
+            "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name
+          } | Set-Content dist/SHA256SUMS.txt -Encoding ascii
+          Get-Content dist/SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aegn-security-windows
+          path: dist/*
+
+      - name: Publicar release
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create $env:GITHUB_REF_NAME (Get-ChildItem dist -File).FullName `
+            --title "AEGN Security $env:GITHUB_REF_NAME" --notes-file installer/NOTAS.md

@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Instalador MSI do AEGN Security (WiX Toolset 5).
+
+  - Instala aegn.exe em C:\Program Files\AEGN (só os administradores escrevem
+    lá, o que a tarefa SYSTEM exige) e adiciona essa pasta ao PATH do sistema.
+  - Ao desinstalar, elimina a tarefa agendada AEGN-Agent (apontaria para um
+    executável que já não existe) e a senha guardada em HKLM\SOFTWARE\AEGN.
+    As regras AppLocker e de firewall mantêm-se: para as retirar, execute
+    "aegn reverter --aplicar" antes de desinstalar (o desinstalar.cmd faz isso).
+
+  Compilar (Windows):
+    wix build installer\aegn.wxs -arch x64 -d Version=0.2.0 -d ExePath=target\release\aegn.exe -o AEGN-Security.msi
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="AEGN Security"
+           Manufacturer="Escola AEGN"
+           Version="$(var.Version)"
+           UpgradeCode="44d944cd-2ef9-434c-93f7-dfe40ff4a3b7"
+           Scope="perMachine"
+           Language="2070"
+           Codepage="1252"
+           Compressed="yes">
+
+    <SummaryInformation Description="AEGN Security - sistema de segurança dos computadores da Escola AEGN"
+                        Manufacturer="Escola AEGN" />
+
+    <MajorUpgrade DowngradeErrorMessage="Já está instalada uma versão mais recente do AEGN Security." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Property Id="ARPCOMMENTS" Value="Sistema de segurança dos computadores da Escola AEGN. Comando: aegn" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="AEGN">
+        <Component Id="AegnExe" Bitness="always64">
+          <File Id="AegnExeFile" Source="$(var.ExePath)" Name="aegn.exe" KeyPath="yes" />
+          <!-- O comando "aegn" fica disponível em qualquer consola nova. -->
+          <Environment Id="AegnPath" Name="PATH" Value="[INSTALLFOLDER]"
+                       Action="set" Part="last" System="yes" Permanent="no" />
+          <!-- A senha (hash) é escrita pelo próprio aegn; apaga-se ao desinstalar. -->
+          <RemoveRegistryKey Root="HKLM" Key="SOFTWARE\AEGN" Action="removeOnUninstall" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Principal" Title="AEGN Security" Level="1">
+      <ComponentRef Id="AegnExe" />
+    </Feature>
+
+    <!-- Desinstalação: retira a tarefa agendada. Return="ignore" porque pode não existir. -->
+    <CustomAction Id="RemoverTarefa"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[SystemFolder]schtasks.exe&quot; /Delete /TN AEGN-Agent /F"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <InstallExecuteSequence>
+      <Custom Action="RemoverTarefa" Before="RemoveFiles"
+              Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+    </InstallExecuteSequence>
+  </Package>
+</Wix>
