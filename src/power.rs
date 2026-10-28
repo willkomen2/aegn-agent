@@ -142,7 +142,8 @@ elseif ($apply) {
 }
 $global:LASTEXITCODE = 0"#;
 
-fn script(apply: bool) -> String {
+/// Tambien lo usa el diagnostico, en simulacion, para ver que esta oculto.
+pub(crate) fn script(apply: bool) -> String {
     format!(
         "$apply = {}\n{SCRIPT}",
         if apply { "$true" } else { "$false" }

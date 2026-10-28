@@ -119,6 +119,10 @@ try {
             # Só se regista se houve correções (a saída vem sem acentos fiáveis).
             if ($energia -notmatch '\[ok\] Os bot') { Anotar "Energia: $energia" }
         } catch { Anotar "[aviso] aegn energia falhou: $($_.Exception.Message)" }
+        # Diagnóstico para ntfy.sh (arranque, sessão e diária), antes de
+        # sair por não haver versão nova.
+        try { & $Exe diagnostico --enviar 2>&1 | Out-Null }
+        catch { Anotar "[aviso] aegn diagnostico falhou: $($_.Exception.Message)" }
     }
     # O PowerShell 5.1 pode não ter o TLS 1.2 ativo, e o GitHub exige-o.
     [Net.ServicePointManager]::SecurityProtocol =

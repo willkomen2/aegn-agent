@@ -16,6 +16,7 @@
 mod audit;
 mod auth;
 mod browser;
+mod diag;
 mod firewall;
 mod install;
 mod junk;
@@ -144,6 +145,14 @@ enum Command {
     Energia {
         #[arg(long, alias = "apply")]
         aplicar: bool,
+    },
+
+    /// Diagnóstico do computador (AppLocker, bloqueios, energia, resgate).
+    /// Com --enviar publica-o em ntfy.sh, sem nomes de contas.
+    #[command(alias = "diag")]
+    Diagnostico {
+        #[arg(long, alias = "send")]
+        enviar: bool,
     },
 
     /// Instala um programa (.exe ou .msi) com uma conta de administrador. Pede a
@@ -472,6 +481,7 @@ fn main() -> Result<()> {
         Some(Command::Instalar { ficheiro }) => install::run(&ficheiro)?,
         Some(Command::Desbloquear { aplicar }) => rescue::run(aplicar)?,
         Some(Command::Energia { aplicar }) => power::run(aplicar)?,
+        Some(Command::Diagnostico { enviar }) => diag::run(enviar)?,
         Some(Command::Senha { action }) => match action {
             SenhaAction::Alterar => auth::change()?,
             SenhaAction::Estado => auth::status()?,
@@ -514,6 +524,8 @@ mod tests {
         assert!(!parse(&["navegador", "estado"]).applies());
         assert!(parse(&["energia", "--aplicar"]).applies());
         assert!(!parse(&["energia"]).applies());
+        // Só lê e envia: não pede a senha (corre na tarefa SYSTEM).
+        assert!(!parse(&["diagnostico", "--enviar"]).applies());
     }
 
     #[test]

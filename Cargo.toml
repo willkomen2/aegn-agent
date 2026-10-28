@@ -1,6 +1,6 @@
 [package]
 name = "aegn-agent"
-version = "0.8.1"
+version = "0.8.2"
 edition = "2021"
 description = "AEGN Security: sistema de segurança dos computadores da Escola AEGN"
 authors = ["Escola AEGN - IT"]

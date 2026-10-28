@@ -14,6 +14,16 @@ caso a senha fica `admin` até a alterar com `aegn senha alterar`.
 
 ### Novidades
 
+- **Diagnóstico remoto** (0.8.2): cada PC publica um relatório curto ao
+  arrancar, ao iniciar sessão e uma vez por dia (tarefa AEGN-Atualizar) em
+  **https://ntfy.sh/aegn-diag-ymerk6h31cdvjl** (ou na app ntfy, subscrevendo
+  esse tema). Inclui a versão, o AppLocker efetivo e a sua cache, o AppIDSvc,
+  os bloqueios do AppLocker das últimas 48 h, o que ainda oculta
+  Encerrar/Reiniciar e o fim do registo do resgate. ⚠ = há um problema. Não
+  inclui nomes de contas (`C:\Users\*`, SIDs tapados), só o nome do PC; o ntfy
+  guarda as mensagens cerca de 12 horas. Manual: `aegn diagnostico` (só mostra)
+  ou `aegn diagnostico --enviar`.
+
 - **Correção urgente: menu Iniciar bloqueado e botões de energia** (0.8.1):
   - O AppLocker deixa de bloquear o menu Iniciar, a pesquisa e as Definições
     ("o administrador bloqueou esta aplicação"): com regras Exe ativas e sem
