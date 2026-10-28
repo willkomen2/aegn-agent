@@ -20,6 +20,7 @@ mod firewall;
 mod install;
 mod junk;
 mod policy;
+mod power;
 mod process;
 #[cfg(windows)]
 mod ps;
@@ -133,6 +134,14 @@ enum Command {
     /// Não pede a senha do AEGN, mas exige consola de administrador.
     #[command(alias = "resgatar", alias = "unlock")]
     Desbloquear {
+        #[arg(long, alias = "apply")]
+        aplicar: bool,
+    },
+
+    /// Repõe os botões Encerrar e Reiniciar (NoClose, HidePowerOptions, MDM,
+    /// gpedit e o direito "Encerrar o sistema"). Também o faz o desbloquear.
+    #[command(alias = "power")]
+    Energia {
         #[arg(long, alias = "apply")]
         aplicar: bool,
     },
@@ -326,6 +335,7 @@ impl Command {
         match self {
             Command::Executar { aplicar, .. }
             | Command::Reverter { aplicar }
+            | Command::Energia { aplicar }
             | Command::Auditoria {
                 action: AuditAction::Remover { aplicar, .. } | AuditAction::Limpar { aplicar },
             }
@@ -461,6 +471,7 @@ fn main() -> Result<()> {
         Some(Command::Reverter { aplicar }) => process::revert_all(aplicar)?,
         Some(Command::Instalar { ficheiro }) => install::run(&ficheiro)?,
         Some(Command::Desbloquear { aplicar }) => rescue::run(aplicar)?,
+        Some(Command::Energia { aplicar }) => power::run(aplicar)?,
         Some(Command::Senha { action }) => match action {
             SenhaAction::Alterar => auth::change()?,
             SenhaAction::Estado => auth::status()?,
@@ -501,6 +512,8 @@ mod tests {
         assert!(!parse(&["atualizar", "estado"]).applies());
         assert!(parse(&["navegador", "impor", "--aplicar"]).applies());
         assert!(!parse(&["navegador", "estado"]).applies());
+        assert!(parse(&["energia", "--aplicar"]).applies());
+        assert!(!parse(&["energia"]).applies());
     }
 
     #[test]

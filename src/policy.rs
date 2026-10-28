@@ -11,6 +11,11 @@
 //! Script y Msi ya no se tocan: al retirar las reglas viejas quedan en
 //! NotConfigured.
 //!
+//! La coleccion Appx (apps empaquetadas) lleva su propio Allow para Todos: con
+//! reglas Exe en vigor y ninguna regla Appx, Windows bloquea TODAS las apps
+//! empaquetadas, incluidos el menu Inicio, la busqueda y Configuracion, tambien
+//! a los administradores ("o administrador bloqueou esta aplicacao").
+//!
 //! Los programas instalados de la lista negra los desinstala ademas
 //! `auditoria limpar` (ver junk.rs); esto cubre los portables.
 //!
@@ -111,7 +116,8 @@ Write-Output ("Contas de aluno com a lista negra: " + (($alunos | ForEach-Object
 }
 
 /// Politica AppLocker en XML: Allow "*" a Todos y el hueco de las reglas de
-/// los alumnos. `audit_only` la deja en modo AuditOnly.
+/// los alumnos, mas el Allow de todas las apps empaquetadas firmadas (la regla
+/// por defecto de Microsoft). `audit_only` la deja en modo AuditOnly.
 fn applocker_policy_xml(audit_only: bool) -> String {
     let mode = if audit_only { "AuditOnly" } else { "Enabled" };
     format!(
@@ -122,6 +128,13 @@ fn applocker_policy_xml(audit_only: bool) -> String {
          \x20     <Conditions><FilePathCondition Path=\"*\" /></Conditions>\n\
          \x20   </FilePathRule>\n\
          {STUDENT_RULES}\
+         \x20 </RuleCollection>\n\
+         \x20 <RuleCollection Type=\"Appx\" EnforcementMode=\"{mode}\">\n\
+         \x20   <FilePublisherRule Id=\"ae6e0000-0000-4000-8000-000000000002\" Name=\"{RULE_TAG}: Apps empacotadas\" \
+         Description=\"AEGN Security - Escola AEGN\" UserOrGroupSid=\"{EVERYONE}\" Action=\"Allow\">\n\
+         \x20     <Conditions><FilePublisherCondition PublisherName=\"*\" ProductName=\"*\" BinaryName=\"*\">\
+         <BinaryVersionRange LowSection=\"0.0.0.0\" HighSection=\"*\" /></FilePublisherCondition></Conditions>\n\
+         \x20   </FilePublisherRule>\n\
          \x20 </RuleCollection>\n\
          </AppLockerPolicy>"
     )
@@ -347,14 +360,27 @@ mod tests {
     }
 
     #[test]
-    fn solo_toca_la_coleccion_exe() {
+    fn solo_toca_las_colecciones_exe_y_appx() {
         for (audit, mode) in [(false, "Enabled"), (true, "AuditOnly")] {
             let xml = applocker_policy_xml(audit);
-            assert!(xml.contains(&format!(
-                "<RuleCollection Type=\"Exe\" EnforcementMode=\"{mode}\">"
-            )));
-            assert_eq!(xml.matches("<RuleCollection").count(), 1);
+            for c in ["Exe", "Appx"] {
+                assert!(xml.contains(&format!(
+                    "<RuleCollection Type=\"{c}\" EnforcementMode=\"{mode}\">"
+                )));
+            }
+            assert_eq!(xml.matches("<RuleCollection").count(), 2);
         }
+    }
+
+    #[test]
+    fn las_apps_empaquetadas_se_permiten_a_todos() {
+        // Sin esto, el menu Inicio y Configuracion quedan bloqueados.
+        let xml = applocker_policy_xml(false);
+        let appx = &xml[xml.find("Type=\"Appx\"").unwrap()..];
+        assert!(appx.contains(&format!("UserOrGroupSid=\"{EVERYONE}\" Action=\"Allow\"")));
+        assert!(appx.contains("PublisherName=\"*\" ProductName=\"*\" BinaryName=\"*\""));
+        // Con el prefijo, strip_script tambien la retira.
+        assert!(appx.contains(&format!("Name=\"{RULE_TAG}: Apps empacotadas\"")));
     }
 
     #[test]

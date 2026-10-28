@@ -16,9 +16,16 @@ New-Item -ItemType Directory -Force -Path $d | Out-Null
 try { Get-AppLockerPolicy -Local -Xml | Set-Content (Join-Path $d ('applocker-copia-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.xml')) } catch { }
 $v = Join-Path $env:TEMP 'aegn-vazio.xml'
 Set-Content $v $x
+# AppIDSvc tem de estar a correr enquanto se aplica a politica vazia; se parar
+# antes, o driver continua a aplicar a cache (System32\AppLocker) e o menu
+# Iniciar continua bloqueado.
+& sc.exe start AppIDSvc | Out-Null
 try { Set-AppLockerPolicy -XmlPolicy $v -ErrorAction Stop; Write-Host '[ok] AppLocker vazio' -ForegroundColor Green } catch { Write-Host "[erro] AppLocker: $_" -ForegroundColor Red }
+Start-Sleep -Seconds 10
+Get-ChildItem (Join-Path $env:SystemRoot 'System32\AppLocker') -Filter '*.AppLocker' -File -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
 & sc.exe config AppIDSvc start= demand | Out-Null
 & sc.exe stop AppIDSvc | Out-Null
+Get-Process -Name StartMenuExperienceHost, ShellExperienceHost, SearchHost, SearchApp, TextInputHost -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Get-NetFirewallRule -Group 'AEGN-RemoteAccess' -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
 Unregister-ScheduledTask -TaskName 'AEGN-Agent' -Confirm:$false -ErrorAction SilentlyContinue
 [gc]::Collect()

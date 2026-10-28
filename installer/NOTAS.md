@@ -14,6 +14,22 @@ caso a senha fica `admin` até a alterar com `aegn senha alterar`.
 
 ### Novidades
 
+- **Correção urgente: menu Iniciar bloqueado e botões de energia** (0.8.1):
+  - O AppLocker deixa de bloquear o menu Iniciar, a pesquisa e as Definições
+    ("o administrador bloqueou esta aplicação"): com regras Exe ativas e sem
+    regras de apps empacotadas, o Windows bloqueava todas as apps empacotadas,
+    também aos administradores. A política do AEGN passa a permiti-las.
+  - O resgate da 0.8.0 parava o AppIDSvc antes de a política vazia chegar ao
+    driver, e o bloqueio continuava. Agora mantém o serviço a correr, apaga a
+    cache `C:\Windows\System32\AppLocker\*.AppLocker`, só depois o para, e
+    reabre o menu Iniciar. Registo em `C:\ProgramData\AEGN\desbloquear.log`.
+  - Novo `aegn energia --aplicar`: repõe os botões Encerrar e Reiniciar
+    (NoClose, HidePowerOptions, diretivas MDM de Start, entradas do gpedit em
+    Registry.pol, com cópia, e o direito "Encerrar o sistema"). Corre ao
+    instalar e em cada execução da atualização automática.
+  - Os PCs com a 0.8.0 atualizam-se sozinhos; se o menu Iniciar ainda não
+    abrir, reinicie.
+
 - **Resgate: computador desbloqueado ao instalar** (0.8.0): o instalador e a
   atualização executam `aegn desbloquear --aplicar`, que esvazia o AppLocker
   local (guarda cópia em C:\ProgramData\AEGN), põe o AppIDSvc em manual,

@@ -111,6 +111,15 @@ if ($Reparar) {
 
 try {
     try { Soltar-Perfis } catch { Anotar "[aviso] Soltar-Perfis falhou: $($_.Exception.Message)" }
+    # Repõe Encerrar/Reiniciar em cada execução (arranque, sessão e diária):
+    # assim corrigem-se também os perfis que não tinham sessão ao instalar.
+    if (Test-Path $Exe) {
+        try {
+            $energia = (& $Exe energia --aplicar 2>&1 | Out-String).Trim()
+            # Só se regista se houve correções (a saída vem sem acentos fiáveis).
+            if ($energia -notmatch '\[ok\] Os bot') { Anotar "Energia: $energia" }
+        } catch { Anotar "[aviso] aegn energia falhou: $($_.Exception.Message)" }
+    }
     # O PowerShell 5.1 pode não ter o TLS 1.2 ativo, e o GitHub exige-o.
     [Net.ServicePointManager]::SecurityProtocol =
         [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
