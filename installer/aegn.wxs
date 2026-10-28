@@ -15,7 +15,7 @@
     inteiro antes de instalar o novo, e a senha e as tarefas têm de sobreviver.
 
   Compilar (Windows):
-    wix build installer\aegn.wxs -arch x64 -d Version=0.8.1-d ExePath=target\release\aegn.exe -o AEGN-Security.msi
+    wix build installer\aegn.wxs -arch x64 -d Version=0.8.2 -d ExePath=target\release\aegn.exe -o AEGN-Security.msi
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="AEGN Security"
